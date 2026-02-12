@@ -1,0 +1,27 @@
+{
+  "runs_per_scenario": 6,
+  "without_rag": {
+    "runs": 6,
+    "use_rag": false,
+    "success_rate": 100.0,
+    "educational_rate": 100.0,
+    "avg_attempts": 1.0,
+    "avg_duration_ms": 80.65,
+    "total_duration_ms": 484.09
+  },
+  "with_rag": {
+    "runs": 6,
+    "use_rag": true,
+    "success_rate": 100.0,
+    "educational_rate": 100.0,
+    "avg_attempts": 1.0,
+    "avg_duration_ms": 6.1,
+    "total_duration_ms": 36.74
+  },
+  "delta": {
+    "success_rate_delta": 0.0,
+    "educational_rate_delta": 0.0,
+    "avg_attempts_delta": 0.0,
+    "avg_duration_ms_delta": -74.55
+  }
+}

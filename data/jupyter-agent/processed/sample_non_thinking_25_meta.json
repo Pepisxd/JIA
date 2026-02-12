@@ -1,0 +1,25 @@
+{
+  "dataset_id": "jupyter-agent/jupyter-agent-dataset",
+  "split": "non_thinking",
+  "requested_target_count": 25,
+  "final_count": 25,
+  "min_edu_score": 4,
+  "max_per_package": 5,
+  "generated_at_utc": "2026-02-11T22:21:54.818245+00:00",
+  "package_distribution": {
+    "pandas": 5,
+    "numpy": 5,
+    "os": 3,
+    "csv": 2,
+    "openpyxl": 1,
+    "torchvision": 1,
+    "sqlite3": 1,
+    "pyspark": 1,
+    "torch": 1,
+    "plotly": 1,
+    "time": 1,
+    "tensorflow": 1,
+    "itertools": 1,
+    "matplotlib": 1
+  }
+}

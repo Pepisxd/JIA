@@ -1,0 +1,53 @@
+{
+  "repo": "jupyter-agent/jupyter-agent-dataset",
+  "config": "default",
+  "features": {
+    "messages": "List({'content': Value('string'), 'role': Value('string'), 'tool_calls': List({'function': {'arguments': {'answer': Value('string'), 'code': Value('string')}, 'name': Value('string')}})})",
+    "id": "Value('string')",
+    "edu_score": "Value('int64')",
+    "files_used": "List(Value('string'))",
+    "packages_used": "List(Value('string'))",
+    "question": "Value('string')",
+    "answer": "Value('string')",
+    "kaggle_dataset_name": "Value('string')",
+    "executor_type": "Value('string')",
+    "original_notebook": "Value('string')",
+    "tools": "List({'function': {'description': Value('string'), 'name': Value('string'), 'parameters': {'properties': {'answer': {'description': Value('string'), 'type': Value('string')}, 'code': {'description': Value('string'), 'type': Value('string')}}, 'required': List(Value('string')), 'type': Value('string')}}, 'type': Value('string')})"
+  },
+  "splits": {
+    "thinking": "SplitInfo(name='thinking', num_bytes=51081197281, num_examples=51389, shard_lengths=None, original_shard_lengths=None, dataset_name=None)",
+    "non_thinking": "SplitInfo(name='non_thinking', num_bytes=51075702887, num_examples=51389, shard_lengths=None, original_shard_lengths=None, dataset_name=None)"
+  },
+  "streaming_samples": {
+    "thinking": {
+      "sample_preview": {
+        "messages": "[{'content': \"You are an intelligent data science assistant with access to an stateful jupyter notebook environment you can interact with it using tool calling. For example, you ha",
+        "id": "0074/290/74290093.ipynb_qa_3",
+        "edu_score": "5",
+        "files_used": "['/kaggle/input/red-wine-quality-cortez-et-al-2009/winequality-red.csv']",
+        "packages_used": "['pandas', 'numpy', 'matplotlib', 'seaborn', 'scikit-learn']",
+        "question": "Which feature exhibits the largest number of outliers based on the boxplot analysis?",
+        "answer": "sulphates",
+        "kaggle_dataset_name": "uciml/red-wine-quality-cortez-et-al-2009",
+        "executor_type": "e2b",
+        "original_notebook": "{\"metadata\":{\"kernelspec\":{\"language\":\"python\",\"display_name\":\"Python 3\",\"name\":\"python3\"},\"language_info\":{\"name\":\"python\",\"version\":\"3.7.10\",\"mimetype\":\"text/x-python\",\"codemirro",
+        "tools": "[{'function': {'description': 'A Python code execution environment that runs code in a Jupyter notebook interface. This is stateful - variables and imports persist between executio"
+      }
+    },
+    "non_thinking": {
+      "sample_preview": {
+        "messages": "[{'content': \"You are an intelligent data science assistant with access to an stateful jupyter notebook environment you can interact with it using tool calling. For example, you ha",
+        "id": "0045/672/45672139.ipynb_qa_3",
+        "edu_score": "5",
+        "files_used": "['/kaggle/input/kickstarter-projects/ks-projects-201801.csv']",
+        "packages_used": "['pandas', 'numpy', 'matplotlib', 'seaborn', 'os', 'scikit-learn', 'scipy', 'plotly']",
+        "question": "What is the average difference in USD goal amount between failed and successful projects?",
+        "answer": "61,257 USD (70,187 for failed minus 8,930 for successful)",
+        "kaggle_dataset_name": "kemical/kickstarter-projects",
+        "executor_type": "e2b",
+        "original_notebook": "{\"cells\":[{\"metadata\":{\"_uuid\":\"8f2839f25d086af736a60e9eeb907d3b93b6e0e5\",\"_cell_guid\":\"b1076dfc-b9ad-4769-8c92-a6c4dae69d19\",\"trusted\":true},\"cell_type\":\"code\",\"source\":\"import nu",
+        "tools": "[{'function': {'description': 'A Python code execution environment that runs code in a Jupyter notebook interface. This is stateful - variables and imports persist between executio"
+      }
+    }
+  }
+}

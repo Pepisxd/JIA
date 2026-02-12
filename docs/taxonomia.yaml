@@ -1,0 +1,13 @@
+﻿version: 0.1
+updated_at: 2026-02-11
+
+temas:
+  - id: pandas_groupby
+    niveles: [principiante, intermedio, avanzado]
+    tipos: [tutorial, desafio, mini-proyecto]
+
+contextos:
+  - deportes
+  - finanzas
+  - videojuegos
+  - ciencia

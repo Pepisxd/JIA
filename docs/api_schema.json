@@ -1,0 +1,13 @@
+﻿{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GenerateExampleRequest",
+  "type": "object",
+  "required": ["tema", "nivel", "contexto", "tipo"],
+  "properties": {
+    "tema": { "type": "string" },
+    "nivel": { "type": "string", "enum": ["principiante", "intermedio", "avanzado"] },
+    "contexto": { "type": "string", "enum": ["deportes", "finanzas", "videojuegos", "ciencia"] },
+    "tipo": { "type": "string", "enum": ["tutorial", "desafio", "mini-proyecto"] }
+  },
+  "additionalProperties": false
+}

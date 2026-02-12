@@ -1,0 +1,77 @@
+{
+  "runs": 6,
+  "use_rag": true,
+  "success_rate": 100.0,
+  "educational_rate": 100.0,
+  "avg_attempts": 1.0,
+  "avg_duration_ms": 6.1,
+  "total_duration_ms": 36.74,
+  "records": [
+    {
+      "index": 0,
+      "status_code": 200,
+      "tema": "pandas_groupby",
+      "nivel": "principiante",
+      "contexto": "deportes",
+      "tests_passed": true,
+      "educational_passed": true,
+      "attempts": 1,
+      "duration_ms": 6.85
+    },
+    {
+      "index": 1,
+      "status_code": 200,
+      "tema": "pandas_groupby",
+      "nivel": "principiante",
+      "contexto": "finanzas",
+      "tests_passed": true,
+      "educational_passed": true,
+      "attempts": 1,
+      "duration_ms": 6.26
+    },
+    {
+      "index": 2,
+      "status_code": 200,
+      "tema": "pandas_groupby",
+      "nivel": "principiante",
+      "contexto": "videojuegos",
+      "tests_passed": true,
+      "educational_passed": true,
+      "attempts": 1,
+      "duration_ms": 5.8
+    },
+    {
+      "index": 3,
+      "status_code": 200,
+      "tema": "pandas_groupby",
+      "nivel": "principiante",
+      "contexto": "ciencia",
+      "tests_passed": true,
+      "educational_passed": true,
+      "attempts": 1,
+      "duration_ms": 5.77
+    },
+    {
+      "index": 4,
+      "status_code": 200,
+      "tema": "pandas_groupby",
+      "nivel": "intermedio",
+      "contexto": "deportes",
+      "tests_passed": true,
+      "educational_passed": true,
+      "attempts": 1,
+      "duration_ms": 5.78
+    },
+    {
+      "index": 5,
+      "status_code": 200,
+      "tema": "pandas_groupby",
+      "nivel": "intermedio",
+      "contexto": "finanzas",
+      "tests_passed": true,
+      "educational_passed": true,
+      "attempts": 1,
+      "duration_ms": 6.13
+    }
+  ]
+}
