@@ -1,0 +1,109 @@
+{
+  "dataset_id": "jupyter-agent/jupyter-agent-dataset",
+  "generated_at_utc": "2026-02-13T05:17:34.507020+00:00",
+  "params": {
+    "splits": [
+      "thinking",
+      "non_thinking"
+    ],
+    "max_source_examples_per_split": 6000,
+    "target_count": 1800,
+    "val_size_requested": 180,
+    "min_edu_score": 0.7,
+    "min_per_topic": 230,
+    "max_per_topic": 500,
+    "max_per_context_per_topic": 240,
+    "seed": 42
+  },
+  "collection_stats": {
+    "processed_total": 12000,
+    "accepted": 11127,
+    "skipped_too_short": 57,
+    "skipped_packages": 33,
+    "processed_thinking": 6000,
+    "skipped_id": 783,
+    "processed_non_thinking": 6000
+  },
+  "counts": {
+    "candidates": 11127,
+    "balanced_total": 1800,
+    "train": 1620,
+    "val": 180
+  },
+  "balance": {
+    "all_selected": {
+      "topics": {
+        "matplotlib_basico": 473,
+        "numpy_basico": 230,
+        "pandas_filtrado": 305,
+        "pandas_groupby": 292,
+        "pandas_lectura": 500
+      },
+      "levels": {
+        "principiante": 1161,
+        "intermedio": 451,
+        "avanzado": 188
+      },
+      "contexts": {
+        "finanzas": 1157,
+        "deportes": 199,
+        "ciencia": 389,
+        "videojuegos": 55
+      }
+    },
+    "train": {
+      "topics": {
+        "numpy_basico": 206,
+        "pandas_filtrado": 275,
+        "matplotlib_basico": 426,
+        "pandas_lectura": 450,
+        "pandas_groupby": 263
+      },
+      "levels": {
+        "principiante": 1048,
+        "avanzado": 169,
+        "intermedio": 403
+      },
+      "contexts": {
+        "ciencia": 359,
+        "finanzas": 1030,
+        "deportes": 182,
+        "videojuegos": 49
+      }
+    },
+    "val": {
+      "topics": {
+        "matplotlib_basico": 47,
+        "pandas_lectura": 50,
+        "pandas_groupby": 29,
+        "pandas_filtrado": 30,
+        "numpy_basico": 24
+      },
+      "levels": {
+        "principiante": 113,
+        "intermedio": 48,
+        "avanzado": 19
+      },
+      "contexts": {
+        "finanzas": 127,
+        "deportes": 17,
+        "ciencia": 30,
+        "videojuegos": 6
+      }
+    }
+  },
+  "pretrain_checks": {
+    "each_topic_train_ge_200": true,
+    "topic_train_min_count": 206,
+    "has_advanced_examples_train": true,
+    "output_format_checks_train_sample": {
+      "all_have_objetivo": true,
+      "all_have_codigo": true,
+      "all_have_explicacion": true
+    }
+  },
+  "files": {
+    "train_jsonl": "data\\finetuning\\train.jsonl",
+    "val_jsonl": "data\\finetuning\\val.jsonl"
+  }
+}
