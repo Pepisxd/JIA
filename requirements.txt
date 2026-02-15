@@ -11,3 +11,5 @@ datasets==4.5.0
 huggingface_hub==0.36.2
 chromadb==1.0.20
 sentence-transformers==5.1.0
+sqlalchemy==2.0.43
+psycopg[binary]==3.2.9

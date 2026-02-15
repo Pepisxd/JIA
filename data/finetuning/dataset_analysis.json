@@ -1,0 +1,218 @@
+{
+  "dataset_id": "jupyter-agent/jupyter-agent-dataset",
+  "generated_at_utc": "2026-02-13T03:35:49.906798+00:00",
+  "max_examples_per_split": 300,
+  "total_processed_examples": 600,
+  "total_high_quality_examples": 600,
+  "total_high_quality_ratio": 1.0,
+  "splits": [
+    {
+      "split": "thinking",
+      "processed_examples": 300,
+      "high_quality_threshold": 0.7,
+      "high_quality_examples": 300,
+      "high_quality_ratio": 1.0,
+      "edu_score_distribution": {
+        "0.8-1.0": 300
+      },
+      "edu_score_mean_normalized": 0.9573,
+      "packages_top_20": [
+        [
+          "pandas",
+          295
+        ],
+        [
+          "numpy",
+          283
+        ],
+        [
+          "matplotlib",
+          266
+        ],
+        [
+          "seaborn",
+          206
+        ],
+        [
+          "scikit-learn",
+          187
+        ],
+        [
+          "plotly",
+          43
+        ],
+        [
+          "scipy",
+          36
+        ],
+        [
+          "os",
+          31
+        ],
+        [
+          "tensorflow",
+          22
+        ],
+        [
+          "statsmodels",
+          19
+        ],
+        [
+          "xgboost",
+          18
+        ],
+        [
+          "keras",
+          15
+        ],
+        [
+          "nltk",
+          15
+        ],
+        [
+          "wordcloud",
+          11
+        ],
+        [
+          "imblearn",
+          10
+        ],
+        [
+          "lightgbm",
+          8
+        ],
+        [
+          "tqdm",
+          7
+        ],
+        [
+          "missingno",
+          6
+        ],
+        [
+          "catboost",
+          6
+        ],
+        [
+          "torch",
+          5
+        ]
+      ],
+      "target_packages_presence": {
+        "pandas_examples": 295,
+        "numpy_examples": 283,
+        "matplotlib_examples": 266
+      },
+      "code_length": {
+        "avg_chars": 955.26,
+        "avg_lines": 21.44,
+        "max_chars": 4278,
+        "max_lines": 101
+      }
+    },
+    {
+      "split": "non_thinking",
+      "processed_examples": 300,
+      "high_quality_threshold": 0.7,
+      "high_quality_examples": 300,
+      "high_quality_ratio": 1.0,
+      "edu_score_distribution": {
+        "0.8-1.0": 300
+      },
+      "edu_score_mean_normalized": 0.954,
+      "packages_top_20": [
+        [
+          "pandas",
+          295
+        ],
+        [
+          "numpy",
+          281
+        ],
+        [
+          "matplotlib",
+          272
+        ],
+        [
+          "seaborn",
+          215
+        ],
+        [
+          "scikit-learn",
+          181
+        ],
+        [
+          "plotly",
+          42
+        ],
+        [
+          "scipy",
+          38
+        ],
+        [
+          "os",
+          35
+        ],
+        [
+          "xgboost",
+          27
+        ],
+        [
+          "tensorflow",
+          19
+        ],
+        [
+          "statsmodels",
+          16
+        ],
+        [
+          "wordcloud",
+          10
+        ],
+        [
+          "imblearn",
+          10
+        ],
+        [
+          "nltk",
+          7
+        ],
+        [
+          "missingno",
+          7
+        ],
+        [
+          "pillow",
+          7
+        ],
+        [
+          "keras",
+          7
+        ],
+        [
+          "ipython",
+          6
+        ],
+        [
+          "lightgbm",
+          5
+        ],
+        [
+          "openpyxl",
+          4
+        ]
+      ],
+      "target_packages_presence": {
+        "pandas_examples": 295,
+        "numpy_examples": 281,
+        "matplotlib_examples": 272
+      },
+      "code_length": {
+        "avg_chars": 1009.23,
+        "avg_lines": 21.98,
+        "max_chars": 2878,
+        "max_lines": 65
+      }
+    }
+  ]
+}

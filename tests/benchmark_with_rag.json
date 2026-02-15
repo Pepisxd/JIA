@@ -1,11 +1,11 @@
 {
-  "runs": 6,
+  "runs": 4,
   "use_rag": true,
   "success_rate": 100.0,
   "educational_rate": 100.0,
   "avg_attempts": 1.0,
-  "avg_duration_ms": 6.1,
-  "total_duration_ms": 36.74,
+  "avg_duration_ms": 6707.27,
+  "total_duration_ms": 26829.2,
   "records": [
     {
       "index": 0,
@@ -16,7 +16,7 @@
       "tests_passed": true,
       "educational_passed": true,
       "attempts": 1,
-      "duration_ms": 6.85
+      "duration_ms": 8204.18
     },
     {
       "index": 1,
@@ -27,7 +27,7 @@
       "tests_passed": true,
       "educational_passed": true,
       "attempts": 1,
-      "duration_ms": 6.26
+      "duration_ms": 5464.18
     },
     {
       "index": 2,
@@ -38,7 +38,7 @@
       "tests_passed": true,
       "educational_passed": true,
       "attempts": 1,
-      "duration_ms": 5.8
+      "duration_ms": 7721.43
     },
     {
       "index": 3,
@@ -49,29 +49,7 @@
       "tests_passed": true,
       "educational_passed": true,
       "attempts": 1,
-      "duration_ms": 5.77
-    },
-    {
-      "index": 4,
-      "status_code": 200,
-      "tema": "pandas_groupby",
-      "nivel": "intermedio",
-      "contexto": "deportes",
-      "tests_passed": true,
-      "educational_passed": true,
-      "attempts": 1,
-      "duration_ms": 5.78
-    },
-    {
-      "index": 5,
-      "status_code": 200,
-      "tema": "pandas_groupby",
-      "nivel": "intermedio",
-      "contexto": "finanzas",
-      "tests_passed": true,
-      "educational_passed": true,
-      "attempts": 1,
-      "duration_ms": 6.13
+      "duration_ms": 5439.27
     }
   ]
 }

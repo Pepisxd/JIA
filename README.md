@@ -23,6 +23,8 @@ cd backend
 - `GET /health` -> estado de la API
 - `POST /generate` -> genera ejemplo educativo con repair loop (max 3 intentos)
 - `GET /metrics` -> dashboard basico de metricas de generaciones
+- `GET /history` -> historial persistido de generaciones
+- `GET /history/{id}` -> detalle completo de una generación
 
 Ejemplo rapido:
 
@@ -30,11 +32,47 @@ Ejemplo rapido:
 Invoke-RestMethod -Method POST http://127.0.0.1:8000/generate -ContentType "application/json" -Body '{"tema":"pandas_groupby","nivel":"principiante","contexto":"deportes","tipo":"tutorial","use_rag":false}'
 ```
 
+Nota:
+
+- Si no envias `use_rag`, el backend usa `use_rag=true` por defecto.
+- Envia `use_rag=false` solo cuando quieras comparar contra baseline sin recuperacion.
+
 Modo ahorro de costos:
 
 - `USE_REAL_LLM=false` usa fallback local (recomendado para desarrollo y tests).
 - `USE_REAL_LLM=true` habilita llamadas reales a Anthropic.
 - `RAG_PREFER_CHROMA=true` habilita recuperación semántica si existe índice vectorial.
+
+Persistencia:
+
+- Usa `DATABASE_URL` en `.env`.
+- Default local: `sqlite:///./data/app.db`.
+- Producción PostgreSQL ejemplo:
+  `postgresql+psycopg://usuario:password@localhost:5432/ia_generator`.
+
+## Docker (API + PostgreSQL)
+
+Levantar servicios:
+
+```powershell
+docker-compose up -d --build
+```
+
+Verificar:
+
+```powershell
+docker-compose ps
+```
+
+API quedara en:
+
+- `http://127.0.0.1:8000`
+
+Si ejecutas API local (fuera de Docker) y quieres usar el Postgres del compose:
+
+```env
+DATABASE_URL=postgresql+psycopg://ia_user:ia_pass@localhost:5432/ia_generator
+```
 
 Benchmark local (60 generaciones):
 

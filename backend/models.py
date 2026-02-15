@@ -22,7 +22,7 @@ class GenerateRequest(BaseModel):
     nivel: NivelLiteral
     contexto: ContextoLiteral
     tipo: TipoLiteral
-    use_rag: bool = False
+    use_rag: bool = True
 
 
 class DatasetInfo(BaseModel):
@@ -52,3 +52,30 @@ class GenerateResponse(BaseModel):
     output: str
     duration_ms: float | None = None
     error: str | None = None
+
+
+class HistoryResponseItem(BaseModel):
+    id: int
+    created_at: str
+    tema: str
+    nivel: str
+    contexto: str
+    tipo: str
+    use_rag: bool
+    tests_passed: bool
+    educational_passed: bool
+    attempts: int
+    duration_ms: float
+    error: str | None = None
+
+
+class HistoryDetailResponseItem(HistoryResponseItem):
+    objetivo: str
+    codigo: str
+    explicacion: list[str]
+    ejercicio: str
+    output: str
+    validation_errors: list[str] = Field(default_factory=list)
+    dataset_name: str
+    dataset_data: list[dict[str, Any]] = Field(default_factory=list)
+    dataset_load_code: str

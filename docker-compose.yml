@@ -1,0 +1,39 @@
+﻿services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ia_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ia_generator
+      POSTGRES_USER: ia_user
+      POSTGRES_PASSWORD: ia_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ia_user -d ia_generator"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ia_api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://ia_user:ia_pass@postgres:5432/ia_generator
+      USE_REAL_LLM: "false"
+      RAG_PREFER_CHROMA: "false"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./:/app
+
+volumes:
+  postgres_data:

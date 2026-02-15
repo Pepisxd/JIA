@@ -1,27 +1,27 @@
 {
-  "runs_per_scenario": 6,
+  "runs_per_scenario": 4,
   "without_rag": {
-    "runs": 6,
+    "runs": 4,
     "use_rag": false,
     "success_rate": 100.0,
     "educational_rate": 100.0,
     "avg_attempts": 1.0,
-    "avg_duration_ms": 80.65,
-    "total_duration_ms": 484.09
+    "avg_duration_ms": 6921.93,
+    "total_duration_ms": 27687.93
   },
   "with_rag": {
-    "runs": 6,
+    "runs": 4,
     "use_rag": true,
     "success_rate": 100.0,
     "educational_rate": 100.0,
     "avg_attempts": 1.0,
-    "avg_duration_ms": 6.1,
-    "total_duration_ms": 36.74
+    "avg_duration_ms": 6707.27,
+    "total_duration_ms": 26829.2
   },
   "delta": {
     "success_rate_delta": 0.0,
     "educational_rate_delta": 0.0,
     "avg_attempts_delta": 0.0,
-    "avg_duration_ms_delta": -74.55
+    "avg_duration_ms_delta": -214.66
   }
 }

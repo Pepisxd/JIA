@@ -1,20 +1,32 @@
 ﻿from __future__ import annotations
 
+from contextlib import asynccontextmanager
+from dataclasses import asdict
 from time import perf_counter
 
 from fastapi import FastAPI, HTTPException
 
+from backend.db import init_db
 from backend.executor import CodeExecutor
 from backend.generator import CodeGenerator, GenerationError
 from backend.metrics import MetricsCollector
-from backend.models import GenerateRequest, GenerateResponse
+from backend.models import GenerateRequest, GenerateResponse, HistoryDetailResponseItem, HistoryResponseItem
 from backend.repair import ValidatingRepairLoop
+from backend.store import get_history_item, list_history, save_generation
 from backend.validators import EducationalValidator
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    init_db()
+    yield
+
 
 app = FastAPI(
     title="Generador Educativo de Codigo Python",
     version="0.3.0",
     description="API MVP robusta con repair loop, validacion educativa y metricas.",
+    lifespan=lifespan,
 )
 
 _generator = CodeGenerator()
@@ -48,6 +60,7 @@ def generate_example(payload: GenerateRequest) -> GenerateResponse:
             duration_ms=duration_ms,
             status=status,
         )
+        save_generation(payload, response)
         return response
     except GenerationError as exc:
         duration_ms = (perf_counter() - start) * 1000
@@ -74,3 +87,16 @@ def generate_example(payload: GenerateRequest) -> GenerateResponse:
 @app.get("/metrics")
 def get_metrics() -> dict:
     return _metrics.summary()
+
+
+@app.get("/history", response_model=list[HistoryResponseItem])
+def get_history(limit: int = 20) -> list[HistoryResponseItem]:
+    return [HistoryResponseItem(**asdict(item)) for item in list_history(limit=limit)]
+
+
+@app.get("/history/{item_id}", response_model=HistoryDetailResponseItem)
+def get_history_detail(item_id: int) -> HistoryDetailResponseItem:
+    item = get_history_item(item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail=f"History item {item_id} no encontrado.")
+    return HistoryDetailResponseItem(**asdict(item))
