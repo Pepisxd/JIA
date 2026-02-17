@@ -51,7 +51,7 @@ class RepairLoop:
             raw_text_original=raw_text_original,
             sanitized_text=sanitized_text,
             used_fallback=used_fallback,
-            model_backend=model_backend,
+            model_backend=model_backend,  # type: ignore[arg-type]
             post_processed=post_processed,
         )
 
@@ -66,6 +66,9 @@ class RepairLoop:
             used_fallback = False
             model_backend = "deterministic"
             post_processed = False
+            prompt_sent = ""
+            parse_ok = True
+
             try:
                 if hasattr(self.generator, "generate_with_raw"):
                     trace = self.generator.generate_with_raw(
@@ -89,8 +92,6 @@ class RepairLoop:
                         attempt=attempt,
                         use_rag=request.use_rag,
                     )
-                    prompt_sent = ""
-                    parse_ok = True
             except GenerationError as exc:
                 last_error = str(exc)
                 if attempt == self.max_attempts:
@@ -168,13 +169,16 @@ class ValidatingRepairLoop(RepairLoop):
         debug_attempts: list[dict] = []
 
         for attempt in range(1, self.max_attempts + 1):
+            raw_text: str | None = None
+            raw_text_original = ""
+            sanitized_text = ""
+            used_fallback = False
+            model_backend = "deterministic"
+            post_processed = False
+            prompt_sent = ""
+            parse_ok = True
+
             try:
-                raw_text: str | None = None
-                raw_text_original = ""
-                sanitized_text = ""
-                used_fallback = False
-                model_backend = "deterministic"
-                post_processed = False
                 if hasattr(self.generator, "generate_with_raw"):
                     trace = self.generator.generate_with_raw(
                         request=request,
@@ -198,12 +202,50 @@ class ValidatingRepairLoop(RepairLoop):
                         attempt=attempt,
                         use_rag=request.use_rag,
                     )
-                    prompt_sent = ""
-                    parse_ok = True
             except GenerationError as exc:
                 last_error = str(exc)
                 if attempt == self.max_attempts:
                     raise
+                continue
+
+            # Detect prompt leakage in code before execution.
+            leak_check = self.validator.validate_non_python_lines_in_code(parsed.codigo)
+            if not leak_check.passed:
+                if debug:
+                    debug_attempts.append(
+                        {
+                            "attempt": attempt,
+                            "model_backend": model_backend,
+                            "used_fallback": used_fallback,
+                            "prompt_sent": _truncate(prompt_sent),
+                            "raw_text": _truncate(raw_text_original),
+                            "sanitized_text": _truncate(sanitized_text),
+                            "validation_errors": leak_check.errors,
+                            "parse_ok": parse_ok,
+                            "exec_ok": False,
+                            "exec_error": "Skipped execution by non_python_lines_in_code_validator",
+                        }
+                    )
+                last_error = self._build_validation_retry_instruction(errors=leak_check.errors, previous_text=raw_text or "")
+                last_response = self._build_response(
+                    parsed=parsed,
+                    result=ExecutionResult(
+                        success=False,
+                        output="",
+                        error="Skipped execution by non_python_lines_in_code_validator",
+                        error_type="ValidationError",
+                    ),
+                    attempts=attempt,
+                    success=False,
+                    educational_passed=False,
+                    validation_errors=leak_check.errors,
+                    error=f"ValidationError: {' | '.join(leak_check.errors)}",
+                    raw_text_original=raw_text_original,
+                    sanitized_text=sanitized_text,
+                    used_fallback=used_fallback,
+                    model_backend=model_backend,
+                    post_processed=post_processed,
+                )
                 continue
 
             result = self.executor.execute(parsed.codigo, dataset_data=parsed.dataset.data)
@@ -280,10 +322,7 @@ class ValidatingRepairLoop(RepairLoop):
                     response.debug = {"attempts": debug_attempts}
                 return response
 
-            last_error = self._build_validation_retry_instruction(
-                errors=validation.errors,
-                previous_text=raw_text or "",
-            )
+            last_error = self._build_validation_retry_instruction(errors=validation.errors, previous_text=raw_text or "")
             last_response = self._build_response(
                 parsed=parsed,
                 result=result,
@@ -308,10 +347,7 @@ class ValidatingRepairLoop(RepairLoop):
     def _build_validation_retry_instruction(self, *, errors: list[str], previous_text: str) -> str:
         joined = " | ".join(errors).lower()
         if len(errors) == 1 and "spanish_validator_simple" in joined:
-            action = (
-                "Reescribe SOLO la sección ## OBJETIVO en español. "
-                "No cambies nada más. Mantén las 4 secciones."
-            )
+            action = "Reescribe SOLO la sección ## OBJETIVO en español. No cambies nada más. Mantén las 4 secciones."
         elif len(errors) == 1 and "comentarios educativos" in joined:
             action = (
                 "Agrega comentarios educativos con # en el bloque ## CODIGO (mínimo 5). "
@@ -322,18 +358,25 @@ class ValidatingRepairLoop(RepairLoop):
                 "Asegura que ## DATASET incluya rows = [ {..}, ... ] (8-15 filas) "
                 "y que el código construya df = pd.DataFrame(rows)."
             )
+        elif len(errors) == 1 and "fuga del repair prompt" in joined:
+            action = (
+                "En ## CODIGO deja SOLO Python ejecutable. NO copies textos de contexto de reparación "
+                "dentro del código."
+            )
         else:
             bullets = "\n".join(f"- {err}" for err in errors)
-            action = (
-                "Corrige TODOS los errores listados sin añadir secciones nuevas.\n"
-                f"Errores:\n{bullets}"
-            )
+            action = f"Corrige TODOS los errores listados sin añadir secciones nuevas.\nErrores:\n{bullets}"
+
         return (
-            "INSTRUCCIONES_DE_REPARACION:\n"
+            "=== REGLAS DE CORRECCION (NO COPIAR AL CODIGO) ===\n"
+            "- NO copies ERRORES A CORREGIR ni SALIDA PREVIA dentro de ## CODIGO.\n"
+            "- En ## CODIGO SOLO Python ejecutable. Si incluyes texto, debe ser comentario con #.\n"
+            "- Si necesitas mencionar errores o cambios, hazlo en ## EXPLICACION, no en el código.\n\n"
+            "=== TAREA DE REINTENTO (NO COPIAR AL CODIGO) ===\n"
             f"{action}\n\n"
-            "VALIDATION_ERRORS:\n"
+            "=== ERRORES A CORREGIR (NO COPIAR AL CODIGO) ===\n"
             + "\n".join(f"- {err}" for err in errors)
-            + "\n\nSALIDA_PREVIA:\n```text\n"
+            + "\n\n=== SALIDA PREVIA (NO COPIAR AL CODIGO) ===\n```text\n"
             + previous_text
             + "\n```"
         )

@@ -47,3 +47,17 @@ print(df.head())
 """
     result = validator.validate("pandas_lectura", code, ["Paso 1", "Paso 2"])
     assert result.passed is True
+
+
+def test_non_python_lines_in_code_validator_detects_prompt_leak() -> None:
+    validator = EducationalValidator()
+    code = """
+import pandas as pd
+df = pd.DataFrame(rows)
+Errores:
+- Falta comentario
+print(df.head())
+"""
+    result = validator.validate_non_python_lines_in_code(code)
+    assert result.passed is False
+    assert any("fuga del repair prompt" in err.lower() for err in result.errors)

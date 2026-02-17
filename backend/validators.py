@@ -41,10 +41,16 @@ class EducationalValidator:
     ) -> ValidationResult:
         errors: list[str] = []
         self._validate_generic(code, explanation or [], errors)
+        self._non_python_lines_in_code_validator(code=code, errors=errors)
         self._validate_topic_specific(tema, code, errors)
         self._forbidden_paths_validator(code=code, raw_text=raw_text, errors=errors)
         self._dataset_section_validator(raw_text=raw_text, dataset_load_code=dataset_load_code, code=code, errors=errors)
         self._spanish_validator_simple(objective=objective, explanation=explanation or [], raw_text=raw_text, errors=errors)
+        return ValidationResult(passed=not errors, errors=errors)
+
+    def validate_non_python_lines_in_code(self, code: str) -> ValidationResult:
+        errors: list[str] = []
+        self._non_python_lines_in_code_validator(code=code, errors=errors)
         return ValidationResult(passed=not errors, errors=errors)
 
     def _validate_generic(self, code: str, explanation: list[str], errors: list[str]) -> None:
@@ -65,6 +71,49 @@ class EducationalValidator:
         weak = {"x", "y", "z", "tmp", "var", "foo", "bar"}
         if any(name.lower() in weak for name in bad_names):
             errors.append("Nombres de variables poco descriptivos detectados.")
+
+    def _non_python_lines_in_code_validator(self, code: str, errors: list[str]) -> None:
+        suspicious_prefixes = ("instrucciones", "validation_errors", "salida_previa", "errores:")
+        python_statement_prefixes = (
+            "def ",
+            "class ",
+            "for ",
+            "if ",
+            "elif ",
+            "while ",
+            "try",
+            "except",
+            "with ",
+            "match ",
+            "case ",
+            "return ",
+            "import ",
+            "from ",
+            "@",
+        )
+
+        for line in code.splitlines():
+            raw = line.rstrip()
+            stripped = raw.strip()
+            if not stripped:
+                continue
+            low = stripped.lower()
+            if stripped.startswith("#"):
+                continue
+            if low.startswith(suspicious_prefixes):
+                errors.append("Texto no ejecutable detectado en ## CODIGO (probable fuga del repair prompt).")
+                return
+            if stripped.startswith("-"):
+                errors.append("Texto no ejecutable detectado en ## CODIGO (probable fuga del repair prompt).")
+                return
+
+            # Heuristica: linea tipo texto natural con ":" sin forma de sentencia Python.
+            if ":" in stripped and not low.startswith(python_statement_prefixes):
+                if not any(tok in stripped for tok in ("=", "(", ")", "[", "]", "{", "}", ".", "'", '"')):
+                    words = re.findall(r"[A-Za-zÁÉÍÓÚáéíóúÑñ]+", stripped)
+                    if len(words) >= 3:
+                        errors.append("Texto no ejecutable detectado en ## CODIGO (probable fuga del repair prompt).")
+                        return
 
     def _validate_topic_specific(self, tema: TemaLiteral, code: str, errors: list[str]) -> None:
         code_low = code.lower()

@@ -264,3 +264,87 @@ def test_validating_repair_loop_fixes_missing_comments_on_retry() -> None:
     assert result.tests_passed is True
     assert result.educational_passed is True
     assert result.attempts == 2
+
+
+class StubLeakTraceGenerator:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def generate_with_raw(
+        self,
+        request: GenerateRequest,
+        error_prev: str | None = None,
+        attempt: int = 1,
+        use_rag: bool = False,
+    ) -> GenerationTrace:
+        _ = request, attempt, use_rag
+        self.calls += 1
+        dataset = DatasetInfo(
+            nombre="demo",
+            data=[{"equipo": "A", "goles": 1}, {"equipo": "B", "goles": 2}],
+            codigo_carga="df = pd.DataFrame(rows)",
+        )
+        if self.calls == 1:
+            parsed = ParsedLLMResponse(
+                objetivo="Aprender groupby en deportes.",
+                dataset=dataset,
+                codigo=(
+                    "import pandas as pd\n"
+                    "df = pd.DataFrame(rows)\n"
+                    "Errores:\n"
+                    "- Falta comentario\n"
+                    "print(df.head())"
+                ),
+                explicacion=["Paso 1", "Paso 2"],
+                ejercicio="Ejercicio",
+            )
+            raw = "## OBJETIVO\n...\n## DATASET\n...\n## CODIGO\nErrores:\n- Falta comentario\n## EXPLICACION\n..."
+        else:
+            assert error_prev is not None
+            assert "NO COPIAR AL CODIGO" in error_prev
+            assert "ERRORES A CORREGIR" in error_prev
+            assert "SALIDA PREVIA" in error_prev
+            assert "INSTRUCCIONES_DE_REPARACION" not in error_prev
+            parsed = ParsedLLMResponse(
+                objetivo="Aprender groupby en deportes.",
+                dataset=dataset,
+                codigo=(
+                    "import pandas as pd\n"
+                    "# c1\n# c2\n# c3\n# c4\n# c5\n"
+                    "df = pd.DataFrame(rows)\n"
+                    "print(df.groupby('equipo')['goles'].sum())"
+                ),
+                explicacion=["Paso 1", "Paso 2"],
+                ejercicio="Ejercicio",
+            )
+            raw = (
+                "## OBJETIVO\nAprender groupby en deportes.\n\n"
+                "## DATASET\nrows = [{'equipo':'A','goles':1},{'equipo':'B','goles':2}]\n\n"
+                "## CODIGO\n# c1\n# c2\n# c3\n# c4\n# c5\n"
+                "df = pd.DataFrame(rows)\nprint(df.groupby('equipo')['goles'].sum())\n\n"
+                "## EXPLICACION\nEsta explicacion usa datos de equipo y goles para el analisis."
+            )
+
+        return GenerationTrace(
+            parsed=parsed,
+            raw_text_original=raw,
+            sanitized_text=raw,
+            prompt_sent="prompt",
+            parse_ok=True,
+            used_fallback=False,
+            model_backend="local",
+            post_processed=False,
+        )
+
+
+def test_validating_repair_loop_fixes_prompt_leak_in_code_on_retry() -> None:
+    loop = ValidatingRepairLoop(
+        generator=StubLeakTraceGenerator(),
+        executor=CodeExecutor(),
+        validator=EducationalValidator(),
+        max_attempts=3,
+    )
+    result = loop.run(_request())
+    assert result.tests_passed is True
+    assert result.educational_passed is True
+    assert result.attempts == 2
