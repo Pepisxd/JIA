@@ -46,11 +46,11 @@ def health_check() -> dict[str, str]:
     return {"status": "ok", "phase": "fase_1_5"}
 
 
-@app.post("/generate", response_model=GenerateResponse)
-def generate_example(payload: GenerateRequest) -> GenerateResponse:
+@app.post("/generate", response_model=GenerateResponse, response_model_exclude_none=True)
+def generate_example(payload: GenerateRequest, debug: bool = False) -> GenerateResponse:
     start = perf_counter()
     try:
-        response = _repair_loop.run(payload)
+        response = _repair_loop.run(payload, debug=debug)
         duration_ms = (perf_counter() - start) * 1000
         response.duration_ms = duration_ms
         status = "success" if response.tests_passed else "failed"

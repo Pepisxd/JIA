@@ -14,6 +14,15 @@ from datasets import load_dataset
 
 DATASET_ID = "jupyter-agent/jupyter-agent-dataset"
 TARGET_PACKAGES = {"pandas", "numpy", "matplotlib"}
+FORBIDDEN_MARKERS = (
+    "/home/",
+    "/kaggle/",
+    "/content/",
+    "../input",
+    "pd.read_csv(",
+    "read_parquet(",
+    "read_excel(",
+)
 
 
 def normalize_edu_score(raw: Any) -> float | None:
@@ -79,7 +88,7 @@ def infer_topic(code: str, question: str, packages: list[str]) -> str:
         return "pandas_groupby"
     if ".query(" in text or re.search(r"df\s*\[\s*df\s*\[", text):
         return "pandas_filtrado"
-    if "read_csv(" in text or "read_excel(" in text:
+    if "read_csv(" in text or "read_excel(" in text or "read_parquet(" in text:
         return "pandas_lectura"
     if "matplotlib" in packages or "plt." in text:
         return "matplotlib_basico"
@@ -126,6 +135,200 @@ def build_instruction(topic: str, level: str, context: str) -> tuple[str, str]:
     return instruction, input_text
 
 
+def has_forbidden_markers(text: str) -> bool:
+    lowered = text.lower()
+    return any(marker in lowered for marker in FORBIDDEN_MARKERS)
+
+
+def synthetic_rows(topic: str, context: str, seed_text: str) -> list[dict[str, Any]]:
+    seed = sum(ord(ch) for ch in seed_text) % (2**31 - 1)
+    rng = random.Random(seed)
+    n_rows = rng.randint(8, 15)
+
+    if context == "deportes":
+        equipos = ["Tigres", "Pumas", "Leones", "Halcones", "Rojos"]
+        base = []
+        for i in range(n_rows):
+            base.append(
+                {
+                    "equipo": equipos[i % len(equipos)],
+                    "goles": rng.randint(0, 5),
+                    "partidos": rng.randint(1, 4),
+                    "temporada": 2025,
+                }
+            )
+        return base
+    if context == "videojuegos":
+        juegos = ["Apex", "Valor", "Craft", "RallyX", "Quest"]
+        return [
+            {
+                "juego": juegos[i % len(juegos)],
+                "jugadores": rng.randint(100, 500),
+                "horas": rng.randint(2, 30),
+                "nivel": rng.randint(1, 20),
+            }
+            for i in range(n_rows)
+        ]
+    if context == "ciencia":
+        return [
+            {
+                "experimento": f"exp_{(i % 4) + 1}",
+                "temperatura": round(rng.uniform(18.0, 40.0), 1),
+                "presion": round(rng.uniform(0.9, 1.3), 2),
+                "resultado": round(rng.uniform(10.0, 95.0), 2),
+            }
+            for i in range(n_rows)
+        ]
+
+    # finanzas (default)
+    regiones = ["Norte", "Sur", "Este", "Oeste"]
+    rows = []
+    for i in range(n_rows):
+        rows.append(
+            {
+                "region": regiones[i % len(regiones)],
+                "ventas": rng.randint(1200, 9800),
+                "costos": rng.randint(800, 6500),
+                "mes": (i % 6) + 1,
+            }
+        )
+    return rows
+
+
+def code_from_topic(topic: str, context: str, dataset_var: str) -> str:
+    if topic == "pandas_groupby":
+        group_col = "equipo" if context == "deportes" else "region"
+        value_col = "goles" if context == "deportes" else "ventas"
+        return (
+            f"import pandas as pd\n\n"
+            f"df = pd.DataFrame({dataset_var})\n"
+            f"resumen = df.groupby('{group_col}', as_index=False)['{value_col}'].sum()\n"
+            "resumen = resumen.sort_values(by='"
+            f"{value_col}', ascending=False)\n"
+            "print(resumen)\n"
+        )
+    if topic == "pandas_filtrado":
+        if context == "deportes":
+            return (
+                f"import pandas as pd\n\n"
+                f"df = pd.DataFrame({dataset_var})\n"
+                "filtro = (df['goles'] >= 2) & (df['partidos'] >= 2)\n"
+                "resultado = df[filtro].copy()\n"
+                "resultado['promedio_goles'] = (resultado['goles'] / resultado['partidos']).round(2)\n"
+                "print(resultado)\n"
+            )
+        return (
+            f"import pandas as pd\n\n"
+            f"df = pd.DataFrame({dataset_var})\n"
+            "resultado = df.query('ventas > 3000 and costos < 5000').copy()\n"
+            "resultado['margen'] = resultado['ventas'] - resultado['costos']\n"
+            "print(resultado)\n"
+        )
+    if topic == "pandas_lectura":
+        return (
+            f"import pandas as pd\n\n"
+            f"df = pd.DataFrame({dataset_var})\n"
+            "print(df.head())\n"
+            "print('\\nResumen de columnas:')\n"
+            "print(df.describe(include='all'))\n"
+        )
+    if topic == "matplotlib_basico":
+        x_col = "equipo" if context == "deportes" else "region"
+        y_col = "goles" if context == "deportes" else "ventas"
+        return (
+            "import pandas as pd\n"
+            "import matplotlib.pyplot as plt\n\n"
+            f"df = pd.DataFrame({dataset_var})\n"
+            f"serie = df.groupby('{x_col}', as_index=False)['{y_col}'].sum()\n"
+            "plt.figure(figsize=(7, 4))\n"
+            f"plt.bar(serie['{x_col}'], serie['{y_col}'])\n"
+            f"plt.title('Total de {y_col} por {x_col}')\n"
+            f"plt.xlabel('{x_col}')\n"
+            f"plt.ylabel('{y_col}')\n"
+            "plt.tight_layout()\n"
+            "plt.show()\n"
+        )
+    if topic == "numpy_basico":
+        return (
+            "import numpy as np\n"
+            "import pandas as pd\n\n"
+            f"df = pd.DataFrame({dataset_var})\n"
+            "valores = df.select_dtypes(include='number').to_numpy()\n"
+            "print('Media global:', np.mean(valores).round(2))\n"
+            "print('Desviacion estandar global:', np.std(valores).round(2))\n"
+        )
+    return (
+        f"import pandas as pd\n\n"
+        f"df = pd.DataFrame({dataset_var})\n"
+        "print(df.head())\n"
+    )
+
+
+def explanation_from_topic(topic: str, context: str) -> list[str]:
+    if topic == "pandas_groupby":
+        return [
+            "Primero construimos el DataFrame desde una lista de diccionarios para mantener el flujo 100% offline.",
+            "Despues agrupamos por la columna categorica del contexto y aplicamos una suma sobre la metrica principal.",
+            "Finalmente ordenamos el resultado para interpretar rapidamente que categoria aporta mas valor.",
+        ]
+    if topic == "pandas_filtrado":
+        return [
+            "Creamos el DataFrame de forma local para evitar dependencias de archivos externos.",
+            "Aplicamos un filtro booleano para quedarnos solo con filas que cumplen condiciones relevantes del contexto.",
+            "Generamos una columna derivada para reforzar el analisis y practicar transformaciones de pandas.",
+        ]
+    if topic == "pandas_lectura":
+        return [
+            "En lugar de leer CSV/Excel, simulamos la carga creando el DataFrame directamente en memoria.",
+            "Usamos head() para inspeccionar rapidamente la estructura inicial de los datos.",
+            "Con describe(include='all') obtenemos un resumen estadistico util para entender calidad y distribucion.",
+        ]
+    if topic == "matplotlib_basico":
+        return [
+            "Partimos de datos sinteticos y construimos el DataFrame con pandas.",
+            "Agregamos la metrica por categoria para obtener una vista resumida antes de graficar.",
+            "Visualizamos con un grafico de barras y etiquetas claras para que la interpretacion sea inmediata.",
+        ]
+    if topic == "numpy_basico":
+        return [
+            "Convertimos las columnas numericas del DataFrame a una matriz numpy para operaciones vectorizadas.",
+            "Calculamos media y desviacion estandar global para practicar estadistica descriptiva basica.",
+            "Este flujo combina pandas y numpy, que es una habilidad central en analisis de datos.",
+        ]
+    return [
+        "Construimos un DataFrame sintetico para practicar analisis de datos sin depender de archivos externos.",
+        "Aplicamos una transformacion simple y verificamos el resultado en consola.",
+        "La idea es que puedas modificar columnas y condiciones para extender el ejercicio.",
+    ]
+
+
+def build_output_v2(topic: str, level: str, context: str, question: str, row_id: str) -> str:
+    objective = question or f"Aprender {topic} en un escenario de {context}."
+    rows = synthetic_rows(topic=topic, context=context, seed_text=row_id)
+    rows_json = json.dumps(rows, ensure_ascii=False, indent=2)
+    code = code_from_topic(topic=topic, context=context, dataset_var="rows")
+    explanation = explanation_from_topic(topic=topic, context=context)
+    explanation_md = "\n".join(f"- {item}" for item in explanation)
+
+    # Estructura exacta requerida para V2.
+    return (
+        "## OBJETIVO\n"
+        f"{objective}\n\n"
+        "## DATASET\n"
+        "```python\n"
+        f"rows = {rows_json}\n"
+        "df = pd.DataFrame(rows)\n"
+        "print(df.head())\n"
+        "```\n\n"
+        "## CODIGO\n"
+        "```python\n"
+        f"{code.strip()}\n"
+        "```\n\n"
+        "## EXPLICACION\n"
+        f"{explanation_md}\n"
+    )
+
+
 def build_output(code: str, question: str, answer: str, dataset_name: str | None) -> str:
     dataset_name = dataset_name or "dataset_educativo"
     objective = question.strip() or "Aprender una tecnica de analisis de datos en Python."
@@ -168,6 +371,7 @@ def collect_candidates(
     min_edu_score: float,
     cache_dir: Path,
     seed: int,
+    version: str,
 ) -> tuple[list[Candidate], dict[str, int]]:
     random.seed(seed)
     candidates: list[Candidate] = []
@@ -202,9 +406,13 @@ def collect_candidates(
             if not code.strip():
                 stats["skipped_no_code"] += 1
                 continue
-            if len(code.splitlines()) < 6:
+            if len([line for line in code.splitlines() if line.strip()]) < 5:
                 stats["skipped_too_short"] += 1
                 continue
+            raw_text = f"{row.get('question', '')}\n{row.get('answer', '')}\n{code}"
+            needs_sanitization = has_forbidden_markers(raw_text)
+            if needs_sanitization:
+                stats["sanitized_count"] += 1
 
             question = str(row.get("question") or "").strip()
             answer = str(row.get("answer") or "").strip()
@@ -213,7 +421,16 @@ def collect_candidates(
             level = infer_level(code, score_norm)
             context = infer_context(question, dataset_name, packages)
             instruction, input_text = build_instruction(topic, level, context)
-            output = build_output(code, question, answer, dataset_name)
+            if version == "v2":
+                output = build_output_v2(
+                    topic=topic,
+                    level=level,
+                    context=context,
+                    question=question,
+                    row_id=str(row_id),
+                )
+            else:
+                output = build_output(code, question, answer, dataset_name)
 
             formatted = {
                 "id": row_id,
@@ -227,6 +444,7 @@ def collect_candidates(
                     "edu_score_norm": score_norm,
                     "packages_used": packages,
                     "split": split,
+                    "needs_sanitization": needs_sanitization,
                 },
             }
             primary_package = packages[0] if packages else "unknown"
@@ -408,13 +626,14 @@ def analyze_balance(records: list[dict[str, Any]]) -> dict[str, dict[str, int]]:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Prepare balanced instruction-tuning dataset from jupyter-agent.")
     parser.add_argument("--split", choices=["thinking", "non_thinking", "both"], default="both")
-    parser.add_argument("--max-source-examples", type=int, default=30000)
+    parser.add_argument("--max-source-examples", type=int, default=12000)
     parser.add_argument("--target-count", type=int, default=5500)
     parser.add_argument("--val-size", type=int, default=500)
     parser.add_argument("--min-edu-score", type=float, default=0.7)
     parser.add_argument("--min-per-topic", type=int, default=200)
     parser.add_argument("--max-per-topic", type=int, default=500)
     parser.add_argument("--max-per-context-per-topic", type=int, default=200)
+    parser.add_argument("--version", choices=["v1", "v2"], default="v1")
     parser.add_argument("--cache-dir", default="data/jupyter-agent")
     parser.add_argument("--output-dir", default="data/finetuning")
     parser.add_argument("--seed", type=int, default=42)
@@ -433,6 +652,7 @@ def main() -> None:
         min_edu_score=args.min_edu_score,
         cache_dir=cache_dir,
         seed=args.seed,
+        version=args.version,
     )
 
     balanced = balance_candidates_with_caps(
@@ -450,14 +670,26 @@ def main() -> None:
 
     topic_min_count_train = min(train_balance["topics"].values()) if train_balance["topics"] else 0
     has_advanced_examples = train_balance["levels"].get("avanzado", 0) > 0
-    format_checks = {
-        "all_have_objetivo": all("OBJETIVO:" in r.get("output", "") for r in train_records[:200]),
-        "all_have_codigo": all("CODIGO:" in r.get("output", "") for r in train_records[:200]),
-        "all_have_explicacion": all("EXPLICACION:" in r.get("output", "") for r in train_records[:200]),
-    }
-
-    train_path = output_dir / "train.jsonl"
-    val_path = output_dir / "val.jsonl"
+    if args.version == "v2":
+        format_checks = {
+            "all_have_objetivo": all("## OBJETIVO" in r.get("output", "") for r in train_records[:200]),
+            "all_have_dataset": all("## DATASET" in r.get("output", "") for r in train_records[:200]),
+            "all_have_codigo": all("## CODIGO" in r.get("output", "") for r in train_records[:200]),
+            "all_have_explicacion": all("## EXPLICACION" in r.get("output", "") for r in train_records[:200]),
+            "all_offline_pd_dataframe": all("pd.DataFrame(" in r.get("output", "") for r in train_records[:200]),
+        }
+        train_path = output_dir / "train_v2.jsonl"
+        val_path = output_dir / "val_v2.jsonl"
+        report_path = output_dir / "prepare_report_v2.json"
+    else:
+        format_checks = {
+            "all_have_objetivo": all("OBJETIVO:" in r.get("output", "") for r in train_records[:200]),
+            "all_have_codigo": all("CODIGO:" in r.get("output", "") for r in train_records[:200]),
+            "all_have_explicacion": all("EXPLICACION:" in r.get("output", "") for r in train_records[:200]),
+        }
+        train_path = output_dir / "train.jsonl"
+        val_path = output_dir / "val.jsonl"
+        report_path = output_dir / "prepare_report.json"
     save_jsonl(train_path, train_records)
     save_jsonl(val_path, val_records)
 
@@ -465,6 +697,7 @@ def main() -> None:
         "dataset_id": DATASET_ID,
         "generated_at_utc": datetime.now(UTC).isoformat(),
         "params": {
+            "version": args.version,
             "splits": splits,
             "max_source_examples_per_split": args.max_source_examples,
             "target_count": args.target_count,
@@ -476,6 +709,15 @@ def main() -> None:
             "seed": args.seed,
         },
         "collection_stats": collection_stats,
+        "sanitized_count": int(collection_stats.get("sanitized_count", 0)),
+        "skipped_total": sum(
+            int(v)
+            for k, v in collection_stats.items()
+            if k.startswith("skipped_")
+        ),
+        "skip_reasons": {
+            k: int(v) for k, v in collection_stats.items() if k.startswith("skipped_")
+        },
         "counts": {
             "candidates": len(candidates),
             "balanced_total": len(balanced),
@@ -499,7 +741,6 @@ def main() -> None:
         },
     }
 
-    report_path = output_dir / "prepare_report.json"
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
     print(f"Saved train: {train_path}")

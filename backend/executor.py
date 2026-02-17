@@ -4,6 +4,7 @@ import contextlib
 import io
 import traceback
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass(slots=True)
@@ -32,13 +33,16 @@ class CodeExecutor:
                 return f"Token bloqueado detectado: {token}"
         return None
 
-    def execute(self, code: str) -> ExecutionResult:
+    def execute(self, code: str, dataset_data: list[dict[str, Any]] | None = None) -> ExecutionResult:
         safety_error = self._check_safety(code)
         if safety_error:
             return ExecutionResult(success=False, output="", error=safety_error, error_type="SafetyError")
 
         stdout = io.StringIO()
         globals_dict = {"__name__": "__generated__"}
+        if dataset_data is not None:
+            # Provide a conventional variable expected by generated snippets.
+            globals_dict["rows"] = dataset_data
 
         try:
             with contextlib.redirect_stdout(stdout):

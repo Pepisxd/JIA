@@ -48,3 +48,37 @@ EJERCICIO: Y
 """
     with pytest.raises(ParseError):
         parse_llm_response(raw)
+
+
+def test_parse_llm_response_v2_sections() -> None:
+    raw = """
+## OBJETIVO
+Practicar groupby con datos de deportes.
+
+## DATASET
+```python
+rows = [
+  {"equipo": "A", "goles": 2},
+  {"equipo": "B", "goles": 3}
+]
+df = pd.DataFrame(rows)
+print(df.head())
+```
+
+## CODIGO
+```python
+import pandas as pd
+rows = [{"equipo": "A", "goles": 2}, {"equipo": "B", "goles": 3}]
+df = pd.DataFrame(rows)
+print(df.groupby("equipo")["goles"].sum())
+```
+
+## EXPLICACION
+- Creamos el DataFrame con datos sintéticos.
+- Aplicamos groupby sobre equipo y sumamos goles.
+"""
+    parsed = parse_llm_response(raw)
+    assert parsed.objetivo.startswith("Practicar groupby")
+    assert len(parsed.dataset.data) == 2
+    assert "pd.DataFrame" in parsed.codigo
+    assert len(parsed.explicacion) >= 2

@@ -57,6 +57,7 @@ class GenerateResponse(BaseModel):
     used_fallback: bool = False
     model_backend: Literal["local", "remote", "deterministic"] = "deterministic"
     post_processed: bool = False
+    debug: dict[str, Any] | None = None
 
 
 class HistoryResponseItem(BaseModel):

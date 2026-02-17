@@ -1,0 +1,10 @@
+# Dependencias opcionales para inferencia local con LoRA/QLoRA.
+# Recomendado usar Linux/WSL2 con CUDA para bitsandbytes.
+
+transformers==4.44.2
+peft==0.12.0
+accelerate==0.33.0
+
+# bitsandbytes no siempre tiene soporte estable en Windows nativo.
+# Si falla en Windows, usar WSL2/Ubuntu o desactivar USE_LOCAL_MODEL.
+bitsandbytes==0.43.3

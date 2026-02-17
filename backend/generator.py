@@ -44,6 +44,8 @@ class GenerationTrace:
     parsed: ParsedLLMResponse
     raw_text_original: str
     sanitized_text: str
+    prompt_sent: str
+    parse_ok: bool
     used_fallback: bool
     model_backend: str
     post_processed: bool = False
@@ -257,19 +259,20 @@ class CodeGenerator:
             "[/INST]"
         )
 
-    def _generate_raw(self, request: GenerateRequest, error_prev: str | None, use_rag: bool) -> tuple[str, str, bool]:
+    def _generate_raw(self, request: GenerateRequest, error_prev: str | None, use_rag: bool) -> tuple[str, str, bool, str]:
         prompt = self._build_prompt(request, error_prev, use_rag=use_rag)
         if self.use_local_model and self.local_model is not None:
             return (
                 self.local_model.generate(prompt=prompt, max_new_tokens=int(os.getenv("LOCAL_MODEL_MAX_NEW_TOKENS", "700"))),
                 "local",
                 False,
+                prompt,
             )
 
         if not self.use_real_llm or not self.llm_client.is_configured:
-            return _render_fallback_response(request, error_prev), "deterministic", True
+            return _render_fallback_response(request, error_prev), "deterministic", True, prompt
 
-        return self.llm_client.generate(prompt=prompt, system_prompt=SYSTEM_PROMPT_V2), "remote", False
+        return self.llm_client.generate(prompt=prompt, system_prompt=SYSTEM_PROMPT_V2), "remote", False, prompt
 
     def generate_with_raw(
         self,
@@ -282,14 +285,17 @@ class CodeGenerator:
         sanitized = ""
         model_backend = "deterministic"
         used_fallback = False
+        prompt_sent = ""
         try:
-            raw_original, model_backend, used_fallback = self._generate_raw(request, error_prev, use_rag=use_rag)
+            raw_original, model_backend, used_fallback, prompt_sent = self._generate_raw(request, error_prev, use_rag=use_rag)
             sanitized = _sanitize_model_text(raw_original)
             parsed = parse_llm_response(sanitized)
             return GenerationTrace(
                 parsed=parsed,
                 raw_text_original=raw_original,
                 sanitized_text=sanitized,
+                prompt_sent=prompt_sent,
+                parse_ok=True,
                 used_fallback=used_fallback,
                 model_backend=model_backend,
                 post_processed=False,
@@ -302,6 +308,8 @@ class CodeGenerator:
                 parsed=parsed,
                 raw_text_original=raw_original or fallback_raw,
                 sanitized_text=fallback_sanitized,
+                prompt_sent=prompt_sent,
+                parse_ok=False,
                 used_fallback=True,
                 model_backend="deterministic",
                 post_processed=False,

@@ -1,0 +1,148 @@
+{
+  "generated_at_utc": "2026-02-16T00:11:19.541795+00:00",
+  "inputs": {
+    "train": "data\\finetuning\\train_v2.jsonl",
+    "val": "data\\finetuning\\val_v2.jsonl",
+    "expected_train_count": 1620,
+    "expected_val_count": 180,
+    "max_missing_section_ratio": 0.01,
+    "require_dataset": true,
+    "check_forbidden": true,
+    "check_spanish": true,
+    "max_forbidden_ratio": 0.0,
+    "min_spanish_ratio": 0.9
+  },
+  "counts": {
+    "train_count": 1620,
+    "val_count": 180
+  },
+  "distribution": {
+    "train": {
+      "topics": {
+        "numpy_basico": 206,
+        "pandas_filtrado": 265,
+        "matplotlib_basico": 434,
+        "pandas_lectura": 450,
+        "pandas_groupby": 265
+      },
+      "levels": {
+        "principiante": 1061,
+        "intermedio": 395,
+        "avanzado": 164
+      },
+      "contexts": {
+        "finanzas": 1026,
+        "ciencia": 375,
+        "deportes": 167,
+        "videojuegos": 52
+      }
+    },
+    "val": {
+      "topics": {
+        "matplotlib_basico": 48,
+        "pandas_lectura": 50,
+        "pandas_groupby": 29,
+        "pandas_filtrado": 29,
+        "numpy_basico": 24
+      },
+      "levels": {
+        "intermedio": 49,
+        "principiante": 119,
+        "avanzado": 12
+      },
+      "contexts": {
+        "videojuegos": 8,
+        "finanzas": 120,
+        "deportes": 19,
+        "ciencia": 33
+      }
+    }
+  },
+  "format": {
+    "train_format_ok_ratio": 1.0,
+    "val_format_ok_ratio": 1.0,
+    "train_missing_sections": {
+      "OBJETIVO": 0,
+      "DATASET": 0,
+      "CODIGO": 0,
+      "EXPLICACION": 0
+    },
+    "val_missing_sections": {
+      "OBJETIVO": 0,
+      "DATASET": 0,
+      "CODIGO": 0,
+      "EXPLICACION": 0
+    }
+  },
+  "duplicates": {
+    "train": {
+      "duplicate_count": 0,
+      "duplicate_ratio": 0.0
+    },
+    "val": {
+      "duplicate_count": 0,
+      "duplicate_ratio": 0.0
+    },
+    "train_val_overlap": 0
+  },
+  "forbidden": {
+    "train": {
+      "count": 0,
+      "ratio": 0.0
+    },
+    "val": {
+      "count": 0,
+      "ratio": 0.0
+    }
+  },
+  "spanish": {
+    "train": {
+      "spanish_count": 1620,
+      "spanish_ratio": 1.0
+    },
+    "val": {
+      "spanish_count": 180,
+      "spanish_ratio": 1.0
+    }
+  },
+  "length_stats": {
+    "train": {
+      "chars_min": 722.0,
+      "chars_max": 1640.0,
+      "chars_p50": 985.0,
+      "chars_p90": 1320.0,
+      "chars_p95": 1426.0,
+      "lines_min": 52.0,
+      "lines_max": 94.0,
+      "lines_p50": 70.0,
+      "lines_p90": 94.0,
+      "lines_p95": 94.0
+    },
+    "val": {
+      "chars_min": 723.0,
+      "chars_max": 1637.0,
+      "chars_p50": 1061.0,
+      "chars_p90": 1313.0,
+      "chars_p95": 1424.0,
+      "lines_min": 52.0,
+      "lines_max": 94.0,
+      "lines_p50": 70.0,
+      "lines_p90": 94.0,
+      "lines_p95": 94.0
+    }
+  },
+  "target_package_coverage": {
+    "train": {
+      "pandas_ratio": 0.9562,
+      "numpy_ratio": 0.9537,
+      "matplotlib_ratio": 0.7877
+    },
+    "val": {
+      "pandas_ratio": 0.9556,
+      "numpy_ratio": 0.9611,
+      "matplotlib_ratio": 0.8167
+    }
+  },
+  "status": "pass",
+  "errors": []
+}

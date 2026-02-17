@@ -1,0 +1,63 @@
+services:
+  api_v1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ia_compare_base:latest
+    container_name: ia_api_v1
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: sqlite:///./data/app_v1.db
+      USE_REAL_LLM: "false"
+      RAG_PREFER_CHROMA: "false"
+    ports:
+      - "8001:8000"
+    volumes:
+      - ../IA_v1:/app
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api_v2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ia_compare_base:latest
+    container_name: ia_api_v2
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: sqlite:///./data/app_v2.db
+      USE_REAL_LLM: "false"
+      RAG_PREFER_CHROMA: "false"
+    ports:
+      - "8002:8000"
+    volumes:
+      - ./:/app
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  benchmark:
+    profiles: ["benchmark"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ia_benchmark_v1_v2
+    depends_on:
+      api_v1:
+        condition: service_healthy
+      api_v2:
+        condition: service_healthy
+    working_dir: /app
+    command: >
+      python tests/benchmark_compare_v1_v2.py
+      --v1-url http://api_v1:8000
+      --v2-url http://api_v2:8000
+      --runs 20
+      --out tests/benchmark_compare_v1_v2.json
+    volumes:
+      - ./:/app

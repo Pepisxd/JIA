@@ -43,6 +43,38 @@ Modo ahorro de costos:
 - `USE_REAL_LLM=true` habilita llamadas reales a Anthropic.
 - `RAG_PREFER_CHROMA=true` habilita recuperación semántica si existe índice vectorial.
 
+Modo modelo local fine-tuned (V2):
+
+- `USE_LOCAL_MODEL=true` activa inferencia con modelo local (default recomendado).
+- `LOCAL_MODEL_REQUIRED=false` evita que el backend caiga si faltan dependencias/modelo (fallback automático).
+- `MODEL_BASE=codellama/CodeLlama-7b-Instruct-hf`
+- `MODEL_PATH=./models/codellama-edugen-v2`
+- `MODEL_DEVICE_MAP=auto`
+- Opcional offline estricto: `LOCAL_MODEL_LOCAL_FILES_ONLY=true`
+
+Ejemplo `.env`:
+
+```env
+USE_LOCAL_MODEL=true
+MODEL_BASE=codellama/CodeLlama-7b-Instruct-hf
+MODEL_PATH=./models/codellama-edugen-v2
+MODEL_DEVICE_MAP=auto
+LOCAL_MODEL_LOCAL_FILES_ONLY=false
+USE_REAL_LLM=false
+```
+
+Arranque backend con modelo local:
+
+```powershell
+python -m uvicorn backend.main:app --reload
+```
+
+Si falta `peft/transformers/bitsandbytes`:
+
+```powershell
+python -m pip install -r requirements-local-model.txt
+```
+
 Persistencia:
 
 - Usa `DATABASE_URL` en `.env`.

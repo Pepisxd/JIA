@@ -5,6 +5,14 @@ from backend.generator import CodeGenerator, GenerationError
 from backend.models import GenerateRequest, GenerateResponse
 from backend.validators import EducationalValidator, ValidationResult
 
+DEBUG_TEXT_LIMIT = 4000
+
+
+def _truncate(value: str, limit: int = DEBUG_TEXT_LIMIT) -> str:
+    if len(value) <= limit:
+        return value
+    return value[:limit] + f"\n...[truncated {len(value) - limit} chars]"
+
 
 class RepairLoop:
     def __init__(self, generator: CodeGenerator, executor: CodeExecutor, max_attempts: int = 3) -> None:
@@ -47,9 +55,10 @@ class RepairLoop:
             post_processed=post_processed,
         )
 
-    def run(self, request: GenerateRequest) -> GenerateResponse:
+    def run(self, request: GenerateRequest, debug: bool = False) -> GenerateResponse:
         last_error = ""
         last_response: GenerateResponse | None = None
+        debug_attempts: list[dict] = []
 
         for attempt in range(1, self.max_attempts + 1):
             raw_text_original = ""
@@ -71,6 +80,8 @@ class RepairLoop:
                     used_fallback = trace.used_fallback
                     model_backend = trace.model_backend
                     post_processed = trace.post_processed
+                    prompt_sent = trace.prompt_sent
+                    parse_ok = trace.parse_ok
                 else:
                     parsed = self.generator.generate(
                         request=request,
@@ -78,6 +89,8 @@ class RepairLoop:
                         attempt=attempt,
                         use_rag=request.use_rag,
                     )
+                    prompt_sent = ""
+                    parse_ok = True
             except GenerationError as exc:
                 last_error = str(exc)
                 if attempt == self.max_attempts:
@@ -85,8 +98,23 @@ class RepairLoop:
                 continue
 
             result = self.executor.execute(parsed.codigo, dataset_data=parsed.dataset.data)
+            if debug:
+                debug_attempts.append(
+                    {
+                        "attempt": attempt,
+                        "model_backend": model_backend,
+                        "used_fallback": used_fallback,
+                        "prompt_sent": _truncate(prompt_sent),
+                        "raw_text": _truncate(raw_text_original),
+                        "sanitized_text": _truncate(sanitized_text),
+                        "validation_errors": [],
+                        "parse_ok": parse_ok,
+                        "exec_ok": result.success,
+                        "exec_error": result.error,
+                    }
+                )
             if result.success:
-                return self._build_response(
+                response = self._build_response(
                     parsed=parsed,
                     result=result,
                     attempts=attempt,
@@ -97,6 +125,9 @@ class RepairLoop:
                     model_backend=model_backend,
                     post_processed=post_processed,
                 )
+                if debug:
+                    response.debug = {"attempts": debug_attempts}
+                return response
 
             last_error = f"{result.error_type}: {result.error}" if result.error else "Ejecucion fallida."
             last_response = self._build_response(
@@ -114,6 +145,8 @@ class RepairLoop:
             )
 
         if last_response:
+            if debug:
+                last_response.debug = {"attempts": debug_attempts}
             return last_response
         raise RuntimeError("Repair loop finalizo sin respuesta util.")
 
@@ -129,9 +162,10 @@ class ValidatingRepairLoop(RepairLoop):
         super().__init__(generator=generator, executor=executor, max_attempts=max_attempts)
         self.validator = validator
 
-    def run(self, request: GenerateRequest) -> GenerateResponse:
+    def run(self, request: GenerateRequest, debug: bool = False) -> GenerateResponse:
         last_error = ""
         last_response: GenerateResponse | None = None
+        debug_attempts: list[dict] = []
 
         for attempt in range(1, self.max_attempts + 1):
             try:
@@ -155,6 +189,8 @@ class ValidatingRepairLoop(RepairLoop):
                     used_fallback = trace.used_fallback
                     model_backend = trace.model_backend
                     post_processed = trace.post_processed
+                    prompt_sent = trace.prompt_sent
+                    parse_ok = trace.parse_ok
                 else:
                     parsed = self.generator.generate(
                         request=request,
@@ -162,6 +198,8 @@ class ValidatingRepairLoop(RepairLoop):
                         attempt=attempt,
                         use_rag=request.use_rag,
                     )
+                    prompt_sent = ""
+                    parse_ok = True
             except GenerationError as exc:
                 last_error = str(exc)
                 if attempt == self.max_attempts:
@@ -170,6 +208,21 @@ class ValidatingRepairLoop(RepairLoop):
 
             result = self.executor.execute(parsed.codigo, dataset_data=parsed.dataset.data)
             if not result.success:
+                if debug:
+                    debug_attempts.append(
+                        {
+                            "attempt": attempt,
+                            "model_backend": model_backend,
+                            "used_fallback": used_fallback,
+                            "prompt_sent": _truncate(prompt_sent),
+                            "raw_text": _truncate(raw_text_original),
+                            "sanitized_text": _truncate(sanitized_text),
+                            "validation_errors": [],
+                            "parse_ok": parse_ok,
+                            "exec_ok": False,
+                            "exec_error": result.error,
+                        }
+                    )
                 last_error = f"{result.error_type}: {result.error}" if result.error else "Ejecucion fallida."
                 last_response = self._build_response(
                     parsed=parsed,
@@ -194,8 +247,23 @@ class ValidatingRepairLoop(RepairLoop):
                 raw_text=raw_text,
                 dataset_load_code=parsed.dataset.codigo_carga,
             )
+            if debug:
+                debug_attempts.append(
+                    {
+                        "attempt": attempt,
+                        "model_backend": model_backend,
+                        "used_fallback": used_fallback,
+                        "prompt_sent": _truncate(prompt_sent),
+                        "raw_text": _truncate(raw_text_original),
+                        "sanitized_text": _truncate(sanitized_text),
+                        "validation_errors": validation.errors,
+                        "parse_ok": parse_ok,
+                        "exec_ok": True,
+                        "exec_error": None,
+                    }
+                )
             if validation.passed:
-                return self._build_response(
+                response = self._build_response(
                     parsed=parsed,
                     result=result,
                     attempts=attempt,
@@ -208,6 +276,9 @@ class ValidatingRepairLoop(RepairLoop):
                     model_backend=model_backend,
                     post_processed=post_processed,
                 )
+                if debug:
+                    response.debug = {"attempts": debug_attempts}
+                return response
 
             last_error = self._build_validation_retry_instruction(
                 errors=validation.errors,
@@ -229,6 +300,8 @@ class ValidatingRepairLoop(RepairLoop):
             )
 
         if last_response:
+            if debug:
+                last_response.debug = {"attempts": debug_attempts}
             return last_response
         raise RuntimeError("Validating repair loop finalizo sin respuesta util.")
 

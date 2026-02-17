@@ -6,6 +6,7 @@ __pycache__/
 # Virtual environments
 venv/
 .venv/
+venv311/
 
 # Distribution / packaging
 build/
@@ -23,7 +24,13 @@ Thumbs.db
 # Data/cache
 data/chroma/
 data/app.db
+data/app_v2.db
 *.sqlite3
+data/finetuning/tmp_v2_test/
+data/finetuning/tmp_v21_check/
+
+# Local model artifacts
+models/
 
 # Logs
 *.log
