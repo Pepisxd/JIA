@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from numbers import Number
 
 from backend.models import TemaLiteral
 
@@ -38,6 +39,7 @@ class EducationalValidator:
         objective: str = "",
         raw_text: str | None = None,
         dataset_load_code: str = "",
+        dataset_data: list[dict] | None = None,
     ) -> ValidationResult:
         errors: list[str] = []
         self._validate_generic(code, explanation or [], errors)
@@ -45,6 +47,7 @@ class EducationalValidator:
         self._validate_topic_specific(tema, code, errors)
         self._forbidden_paths_validator(code=code, raw_text=raw_text, errors=errors)
         self._dataset_section_validator(raw_text=raw_text, dataset_load_code=dataset_load_code, code=code, errors=errors)
+        self._dataset_code_coherence_validator(code=code, dataset_data=dataset_data or [], errors=errors)
         self._spanish_validator_simple(objective=objective, explanation=explanation or [], raw_text=raw_text, errors=errors)
         return ValidationResult(passed=not errors, errors=errors)
 
@@ -161,6 +164,45 @@ class EducationalValidator:
         merged = f"{dataset_load_code}\n{code}".lower()
         if "pd.dataframe(" not in merged:
             errors.append("dataset_section_validator: falta uso de pd.DataFrame en dataset/codigo.")
+
+    def _dataset_code_coherence_validator(self, *, code: str, dataset_data: list[dict], errors: list[str]) -> None:
+        if not dataset_data:
+            return
+        first_row = next((row for row in dataset_data if isinstance(row, dict) and row), None)
+        if first_row is None:
+            return
+        dataset_keys = [k for k in first_row.keys() if isinstance(k, str)]
+        if not dataset_keys:
+            return
+
+        code_norm = re.sub(r"\s+", "", code.lower())
+        if "pd.dataframe(rows)" not in code_norm:
+            errors.append(
+                "code_overrides_dataset: el codigo debe construir DataFrame desde rows usando pd.DataFrame(rows)."
+            )
+            return
+
+        rows_match = re.search(r"(?is)\brows\s*=\s*(\[[\s\S]*?\])", code)
+        if not rows_match:
+            return
+        code_rows_block = rows_match.group(1)
+        code_keys = set(re.findall(r'["\']([A-Za-z_][A-Za-z0-9_]*)["\']\s*:', code_rows_block))
+        if not code_keys:
+            return
+        dataset_key_set = set(dataset_keys)
+        if code_keys != dataset_key_set:
+            errors.append(
+                "code_overrides_dataset: ## CODIGO redefine rows con columnas distintas al ## DATASET."
+            )
+            return
+
+        # Guardrail adicional: al menos una columna categorica y una numerica usadas en el codigo.
+        categorical = [k for k, v in first_row.items() if isinstance(v, str)]
+        numeric = [k for k, v in first_row.items() if isinstance(v, Number) and not isinstance(v, bool)]
+        if categorical and categorical[0] not in code:
+            errors.append("code_overrides_dataset: el codigo no usa la columna categorica esperada del dataset.")
+        if numeric and numeric[0] not in code:
+            errors.append("code_overrides_dataset: el codigo no usa la columna numerica esperada del dataset.")
 
     def _spanish_validator_simple(
         self,

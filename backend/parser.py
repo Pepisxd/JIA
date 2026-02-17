@@ -12,6 +12,19 @@ class ParseError(ValueError):
     pass
 
 
+def _infer_columns(rows: list[dict]) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        for key in row.keys():
+            if isinstance(key, str) and key not in seen:
+                seen.add(key)
+                ordered.append(key)
+    return ordered
+
+
 def _extract_fenced_block(text: str, language: str) -> str | None:
     pattern = rf"```{language}\s*(.*?)```"
     match = re.search(pattern, text, flags=re.IGNORECASE | re.DOTALL)
@@ -73,7 +86,10 @@ def _parse_dataset_json(text: str) -> DatasetInfo | None:
         raw = json.loads(json_block)
     except json.JSONDecodeError as exc:
         raise ParseError(f"JSON de dataset invalido: {exc}") from exc
-    return DatasetInfo.model_validate(raw)
+    dataset = DatasetInfo.model_validate(raw)
+    if not dataset.columns:
+        dataset.columns = _infer_columns(dataset.data)
+    return dataset
 
 
 def _parse_dataset_v2(text: str) -> DatasetInfo | None:
@@ -94,6 +110,7 @@ def _parse_dataset_v2(text: str) -> DatasetInfo | None:
         nombre="dataset_sintetico",
         data=rows,
         codigo_carga="df = pd.DataFrame(rows)",
+        columns=_infer_columns(rows),
     )
 
 

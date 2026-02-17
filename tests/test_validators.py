@@ -61,3 +61,30 @@ print(df.head())
     result = validator.validate_non_python_lines_in_code(code)
     assert result.passed is False
     assert any("fuga del repair prompt" in err.lower() for err in result.errors)
+
+
+def test_dataset_code_coherence_validator_detects_overridden_rows() -> None:
+    validator = EducationalValidator()
+    code = """
+import pandas as pd
+# Comentario educativo 1
+# Comentario educativo 2
+# Comentario educativo 3
+# Comentario educativo 4
+# Comentario educativo 5
+rows = [{"region": "Norte", "ventas": 10, "mes": 1}]
+df = pd.DataFrame(rows)
+print(df)
+"""
+    dataset_data = [{"equipo": "A", "goles": 2, "partidos": 1}]
+    result = validator.validate(
+        "pandas_groupby",
+        code,
+        ["Paso 1", "Paso 2"],
+        objective="Objetivo",
+        raw_text="## DATASET",
+        dataset_load_code="df = pd.DataFrame(rows)",
+        dataset_data=dataset_data,
+    )
+    assert result.passed is False
+    assert any("code_overrides_dataset" in err for err in result.errors)

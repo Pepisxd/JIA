@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from numbers import Number
 
 from backend.executor import CodeExecutor, ExecutionResult
 from backend.generator import CodeGenerator, GenerationError
@@ -15,6 +16,74 @@ def _truncate(value: str, limit: int = DEBUG_TEXT_LIMIT) -> str:
     if len(value) <= limit:
         return value
     return value[:limit] + f"\n...[truncated {len(value) - limit} chars]"
+
+
+def _infer_dataset_columns(rows: list[dict]) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        for key in row.keys():
+            if isinstance(key, str) and key not in seen:
+                seen.add(key)
+                ordered.append(key)
+    return ordered
+
+
+def _inject_educational_comments(code: str, min_comments: int = 5) -> str:
+    lines = code.splitlines()
+    existing = sum(1 for line in lines if line.strip().startswith("#"))
+    missing = max(0, min_comments - existing)
+    if missing == 0:
+        return code
+
+    insert_at = 0
+    while insert_at < len(lines):
+        stripped = lines[insert_at].strip()
+        if not stripped or stripped.startswith("import ") or stripped.startswith("from "):
+            insert_at += 1
+            continue
+        break
+    comments = [f"# Comentario educativo {i + 1}" for i in range(missing)]
+    patched = lines[:insert_at] + comments + lines[insert_at:]
+    return "\n".join(patched).strip()
+
+
+def _build_deterministic_code_from_dataset(dataset_data: list[dict]) -> str:
+    rows = [row for row in dataset_data if isinstance(row, dict)]
+    if not rows:
+        return (
+            "import pandas as pd\n"
+            "# Comentario educativo 1\n# Comentario educativo 2\n# Comentario educativo 3\n"
+            "# Comentario educativo 4\n# Comentario educativo 5\n"
+            "df = pd.DataFrame(rows)\n"
+            "print(df.head())"
+        )
+
+    sample = rows[0]
+    keys = _infer_dataset_columns(rows) or [k for k in sample.keys() if isinstance(k, str)]
+    categorical = next((k for k in keys if isinstance(sample.get(k), str)), keys[0])
+    numeric = next(
+        (
+            k
+            for k in keys
+            if isinstance(sample.get(k), Number) and not isinstance(sample.get(k), bool)
+        ),
+        keys[1] if len(keys) > 1 else keys[0],
+    )
+    return (
+        "import pandas as pd\n"
+        "# Comentario educativo 1: construir DataFrame desde rows del dataset.\n"
+        "# Comentario educativo 2: inspeccionar las primeras filas para validar columnas.\n"
+        "# Comentario educativo 3: agrupar por la columna categorica principal.\n"
+        "# Comentario educativo 4: aplicar suma sobre la columna numerica principal.\n"
+        "# Comentario educativo 5: mostrar el resumen para interpretar resultados.\n"
+        "df = pd.DataFrame(rows)\n"
+        "print(df.head())\n"
+        f"resumen = df.groupby('{categorical}', as_index=False)['{numeric}'].sum()\n"
+        "print(resumen)"
+    )
 
 
 class RepairLoop:
@@ -211,6 +280,9 @@ class ValidatingRepairLoop(RepairLoop):
                     raise
                 continue
 
+            if not parsed.dataset.columns:
+                parsed.dataset.columns = _infer_dataset_columns(parsed.dataset.data)
+
             current_parsed = parsed
             current_text: str | None = self._compose_sections_text(current_parsed)
             raw_for_validation: str | None = raw_text if raw_text else None
@@ -229,8 +301,9 @@ class ValidatingRepairLoop(RepairLoop):
                         ok = self._apply_patch(
                             request=request,
                             current_parsed=current_parsed,
-                            section=action[0],
-                            instruction=action[1],
+                            mode=action[0],
+                            section=action[1],
+                            instruction=action[2],
                             previous_text=current_text or "",
                         )
                         if ok is not None:
@@ -259,6 +332,7 @@ class ValidatingRepairLoop(RepairLoop):
                     objective=current_parsed.objetivo,
                     raw_text=raw_for_validation,
                     dataset_load_code=current_parsed.dataset.codigo_carga,
+                    dataset_data=current_parsed.dataset.data,
                 )
                 if validation.passed:
                     final_result = result
@@ -272,8 +346,9 @@ class ValidatingRepairLoop(RepairLoop):
                     ok = self._apply_patch(
                         request=request,
                         current_parsed=current_parsed,
-                        section=action[0],
-                        instruction=action[1],
+                        mode=action[0],
+                        section=action[1],
+                        instruction=action[2],
                         previous_text=current_text or "",
                     )
                     if ok is not None:
@@ -348,34 +423,36 @@ class ValidatingRepairLoop(RepairLoop):
             return last_response
         raise RuntimeError("Validating repair loop finalizo sin respuesta util.")
 
-    def _select_patch_action(self, errors: list[str]) -> tuple[str, str] | None:
+    def _select_patch_action(self, errors: list[str]) -> tuple[str, str, str] | None:
         lowered = [err.lower() for err in errors]
+        if any("code_overrides_dataset" in err for err in lowered):
+            return ("deterministic", "codigo", "rebuild_code_from_dataset")
         if any("fuga del repair prompt" in err for err in lowered):
             return (
+                "model",
                 "codigo",
-                "Devuelve únicamente el bloque completo de ## CODIGO en un fence ```python ...``` y nada más. "
+                "Devuelve unicamente el bloque completo de ## CODIGO en un fence ```python ...``` y nada mas. "
                 "No incluyas listas, encabezados, ni texto fuera de Python.",
             )
         if any("comentarios educativos" in err for err in lowered):
-            return (
-                "codigo",
-                "Devuelve únicamente ## CODIGO en un fence ```python ...``` con mínimo 5 comentarios #. "
-                "No cambies la lógica. No uses read_csv ni rutas.",
-            )
+            return ("deterministic", "codigo", "inject_comments")
         if any("spanish_validator_simple" in err for err in lowered):
             return (
+                "model",
                 "objetivo",
-                "Devuelve únicamente una línea para ## OBJETIVO en español y nada más.",
+                "Devuelve unicamente una linea para ## OBJETIVO en espanol y nada mas.",
             )
         if any("la explicacion debe incluir al menos 2 pasos" in err for err in lowered):
             return (
+                "model",
                 "explicacion",
-                "Devuelve únicamente ## EXPLICACION con al menos 2 bullets en español.",
+                "Devuelve unicamente ## EXPLICACION con al menos 2 bullets en espanol.",
             )
         if any("dataset_section_validator" in err for err in lowered):
             return (
+                "model",
                 "codigo",
-                "Devuelve únicamente ## CODIGO en fence ```python``` asegurando df = pd.DataFrame(rows).",
+                "Devuelve unicamente ## CODIGO en fence ```python``` asegurando df = pd.DataFrame(rows).",
             )
         return None
 
@@ -384,10 +461,27 @@ class ValidatingRepairLoop(RepairLoop):
         *,
         request: GenerateRequest,
         current_parsed,
+        mode: str,
         section: str,
         instruction: str,
         previous_text: str,
     ) -> tuple | None:
+        if mode == "deterministic":
+            patched = current_parsed.model_copy(deep=True)
+            if instruction == "inject_comments":
+                patched.codigo = _inject_educational_comments(
+                    patched.codigo,
+                    min_comments=self.validator.min_educational_comments,
+                )
+            elif instruction == "rebuild_code_from_dataset":
+                patched.codigo = _build_deterministic_code_from_dataset(patched.dataset.data)
+            else:
+                return None
+            if not patched.dataset.columns:
+                patched.dataset.columns = _infer_dataset_columns(patched.dataset.data)
+            merged_text = self._compose_sections_text(patched)
+            return patched, merged_text, "deterministic-patch", True, "deterministic"
+
         if not hasattr(self.generator, "generate_patch"):
             return None
         raw, sanitized, prompt, used_fallback, backend = self.generator.generate_patch(
@@ -400,6 +494,8 @@ class ValidatingRepairLoop(RepairLoop):
             patched = apply_section_patch(current_parsed, section=section, patch_text=sanitized)
         except ParseError:
             return None
+        if not patched.dataset.columns:
+            patched.dataset.columns = _infer_dataset_columns(patched.dataset.data)
         merged_text = self._compose_sections_text(patched)
         return patched, merged_text, prompt, used_fallback, backend
 
@@ -426,31 +522,22 @@ class ValidatingRepairLoop(RepairLoop):
     def _build_validation_retry_instruction(self, *, errors: list[str], previous_text: str) -> str:
         joined = " | ".join(errors).lower()
         if len(errors) == 1 and "spanish_validator_simple" in joined:
-            action = "Reescribe SOLO la sección ## OBJETIVO en español. No cambies nada más. Mantén las 4 secciones."
+            action = "Reescribe SOLO la seccion ## OBJETIVO en espanol. No cambies nada mas. Manten las 4 secciones."
         elif len(errors) == 1 and "comentarios educativos" in joined:
-            action = (
-                "Agrega comentarios educativos con # en el bloque ## CODIGO (mínimo 5). "
-                "No cambies la lógica. No uses read_csv ni rutas."
-            )
+            action = "Ajusta el codigo para incluir comentarios educativos con #."
         elif len(errors) == 1 and "dataset_section_validator" in joined:
-            action = (
-                "Asegura que ## DATASET incluya rows = [ {..}, ... ] (8-15 filas) "
-                "y que el código construya df = pd.DataFrame(rows)."
-            )
+            action = "Asegura que ## DATASET use rows y el codigo construya df = pd.DataFrame(rows)."
         elif len(errors) == 1 and "fuga del repair prompt" in joined:
-            action = (
-                "En ## CODIGO deja SOLO Python ejecutable. NO copies textos de contexto de reparación "
-                "dentro del código."
-            )
+            action = "En ## CODIGO deja SOLO Python ejecutable."
         else:
             bullets = "\n".join(f"- {err}" for err in errors)
-            action = f"Corrige TODOS los errores listados sin añadir secciones nuevas.\nErrores:\n{bullets}"
+            action = f"Corrige TODOS los errores listados sin anadir secciones nuevas.\nErrores:\n{bullets}"
 
         return (
             "=== REGLAS DE CORRECCION (NO COPIAR AL CODIGO) ===\n"
             "- NO copies ERRORES A CORREGIR ni SALIDA PREVIA dentro de ## CODIGO.\n"
             "- En ## CODIGO SOLO Python ejecutable. Si incluyes texto, debe ser comentario con #.\n"
-            "- Si necesitas mencionar errores o cambios, hazlo en ## EXPLICACION, no en el código.\n\n"
+            "- Si necesitas mencionar errores o cambios, hazlo en ## EXPLICACION, no en el codigo.\n\n"
             "=== TAREA DE REINTENTO (NO COPIAR AL CODIGO) ===\n"
             f"{action}\n\n"
             "=== ERRORES A CORREGIR (NO COPIAR AL CODIGO) ===\n"

@@ -29,6 +29,7 @@ class DatasetInfo(BaseModel):
     nombre: str = Field(min_length=1)
     data: list[dict[str, Any]] = Field(default_factory=list)
     codigo_carga: str = Field(min_length=1)
+    columns: list[str] = Field(default_factory=list)
 
 
 class ParsedLLMResponse(BaseModel):
