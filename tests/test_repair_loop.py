@@ -269,6 +269,7 @@ def test_validating_repair_loop_fixes_missing_comments_on_retry() -> None:
 class StubLeakTraceGenerator:
     def __init__(self) -> None:
         self.calls = 0
+        self.patch_calls = 0
 
     def generate_with_raw(
         self,
@@ -284,46 +285,20 @@ class StubLeakTraceGenerator:
             data=[{"equipo": "A", "goles": 1}, {"equipo": "B", "goles": 2}],
             codigo_carga="df = pd.DataFrame(rows)",
         )
-        if self.calls == 1:
-            parsed = ParsedLLMResponse(
-                objetivo="Aprender groupby en deportes.",
-                dataset=dataset,
-                codigo=(
-                    "import pandas as pd\n"
-                    "df = pd.DataFrame(rows)\n"
-                    "Errores:\n"
-                    "- Falta comentario\n"
-                    "print(df.head())"
-                ),
-                explicacion=["Paso 1", "Paso 2"],
-                ejercicio="Ejercicio",
-            )
-            raw = "## OBJETIVO\n...\n## DATASET\n...\n## CODIGO\nErrores:\n- Falta comentario\n## EXPLICACION\n..."
-        else:
-            assert error_prev is not None
-            assert "NO COPIAR AL CODIGO" in error_prev
-            assert "ERRORES A CORREGIR" in error_prev
-            assert "SALIDA PREVIA" in error_prev
-            assert "INSTRUCCIONES_DE_REPARACION" not in error_prev
-            parsed = ParsedLLMResponse(
-                objetivo="Aprender groupby en deportes.",
-                dataset=dataset,
-                codigo=(
-                    "import pandas as pd\n"
-                    "# c1\n# c2\n# c3\n# c4\n# c5\n"
-                    "df = pd.DataFrame(rows)\n"
-                    "print(df.groupby('equipo')['goles'].sum())"
-                ),
-                explicacion=["Paso 1", "Paso 2"],
-                ejercicio="Ejercicio",
-            )
-            raw = (
-                "## OBJETIVO\nAprender groupby en deportes.\n\n"
-                "## DATASET\nrows = [{'equipo':'A','goles':1},{'equipo':'B','goles':2}]\n\n"
-                "## CODIGO\n# c1\n# c2\n# c3\n# c4\n# c5\n"
-                "df = pd.DataFrame(rows)\nprint(df.groupby('equipo')['goles'].sum())\n\n"
-                "## EXPLICACION\nEsta explicacion usa datos de equipo y goles para el analisis."
-            )
+        parsed = ParsedLLMResponse(
+            objetivo="Aprender groupby en deportes.",
+            dataset=dataset,
+            codigo=(
+                "import pandas as pd\n"
+                "df = pd.DataFrame(rows)\n"
+                "Errores:\n"
+                "- Falta comentario\n"
+                "print(df.head())"
+            ),
+            explicacion=["Paso 1", "Paso 2"],
+            ejercicio="Ejercicio",
+        )
+        raw = "## OBJETIVO\n...\n## DATASET\n...\n## CODIGO\nErrores:\n- Falta comentario\n## EXPLICACION\n..."
 
         return GenerationTrace(
             parsed=parsed,
@@ -336,6 +311,31 @@ class StubLeakTraceGenerator:
             post_processed=False,
         )
 
+    def generate_patch(
+        self,
+        *,
+        request: GenerateRequest,
+        section: str,
+        instruction: str,
+        previous_text: str,
+    ) -> tuple[str, str, str, bool, str]:
+        _ = request
+        self.patch_calls += 1
+        if section == "codigo":
+            assert ("bloque completo de ## CODIGO" in instruction) or ("asegurando df = pd.DataFrame(rows)" in instruction)
+            raw = (
+                "```python\n"
+                "import pandas as pd\n"
+                "# c1\n# c2\n# c3\n# c4\n# c5\n"
+                "df = pd.DataFrame(rows)\n"
+                "print(df.groupby('equipo')['goles'].sum())\n"
+                "```"
+            )
+            return raw, raw, "patch-prompt-codigo", False, "local"
+        assert section == "objetivo"
+        raw = "Aprender groupby en deportes con análisis de goles."
+        return raw, raw, "patch-prompt-objetivo", False, "local"
+
 
 def test_validating_repair_loop_fixes_prompt_leak_in_code_on_retry() -> None:
     loop = ValidatingRepairLoop(
@@ -347,4 +347,8 @@ def test_validating_repair_loop_fixes_prompt_leak_in_code_on_retry() -> None:
     result = loop.run(_request())
     assert result.tests_passed is True
     assert result.educational_passed is True
-    assert result.attempts == 2
+    assert result.attempts == 1
+    code_low = result.codigo.lower()
+    assert "errores:" not in code_low
+    assert "salida_previa" not in code_low
+    assert "instrucciones_de_reparacion" not in code_low

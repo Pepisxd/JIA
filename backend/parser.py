@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import json
 import re
+from copy import deepcopy
 
 from backend.models import DatasetInfo, ParsedLLMResponse
 
@@ -129,6 +130,67 @@ def _parse_code(text: str) -> str | None:
         return code_section.strip() or None
     # Legacy fallback: first python fenced block
     return _extract_fenced_block(text, "python")
+
+
+def extract_code_patch(text: str) -> str | None:
+    block = _extract_fenced_block(text, "python")
+    if block:
+        return block.strip()
+    section = _extract_section_block(text, "CODIGO")
+    if not section:
+        return None
+    block2 = _extract_fenced_block(section, "python")
+    return (block2 or section).strip() if (block2 or section) else None
+
+
+def extract_objective_patch(text: str) -> str | None:
+    objective = _parse_objective(text)
+    if objective:
+        return objective.strip()
+    # Fallback: first non-empty non-fence line.
+    for line in text.splitlines():
+        clean = line.strip()
+        if clean and not clean.startswith("```") and not clean.startswith("#"):
+            return clean
+    return None
+
+
+def extract_explanation_patch(text: str) -> list[str]:
+    items = _extract_list_items(text, "EXPLICACION")
+    if items:
+        return items
+    out: list[str] = []
+    for line in text.splitlines():
+        clean = line.strip()
+        if clean.startswith("-"):
+            val = clean[1:].strip()
+            if val:
+                out.append(val)
+    return out
+
+
+def apply_section_patch(base: ParsedLLMResponse, section: str, patch_text: str) -> ParsedLLMResponse:
+    patched = deepcopy(base)
+    sec = section.lower().strip()
+    if sec == "codigo":
+        code = extract_code_patch(patch_text)
+        if not code:
+            raise ParseError("No se pudo extraer bloque de codigo en patch.")
+        patched.codigo = code
+        return patched
+    if sec == "objetivo":
+        objective = extract_objective_patch(patch_text)
+        if not objective:
+            raise ParseError("No se pudo extraer objetivo en patch.")
+        patched.objetivo = objective
+        return patched
+    if sec == "explicacion":
+        explanation = extract_explanation_patch(patch_text)
+        if not explanation:
+            raise ParseError("No se pudo extraer explicacion en patch.")
+        patched.explicacion = explanation
+        return patched
+    raise ParseError(f"Section patch no soportada: {section}")
 
 
 def parse_llm_response(text: str) -> ParsedLLMResponse:

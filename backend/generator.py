@@ -129,13 +129,13 @@ def _rows_for_prompt(contexto: str, seed: int) -> list[dict[str, int | str]]:
 def _render_fallback_response(request: GenerateRequest, error_prev: str | None) -> str:
     rows = _rows_for_prompt(request.contexto, seed=abs(hash(f"{request.tema}:{request.contexto}:{request.nivel}")) % 10_000)
     group_col, value_col = _context_columns(request.contexto)
-    repair_comment = f"# Ajuste por error previo: {error_prev}\n" if error_prev else ""
+    _ = error_prev
 
     if request.tema == "pandas_filtrado":
         code = (
             "import pandas as pd\n\n"
             f"rows = {rows}\n"
-            f"{repair_comment}df = pd.DataFrame(rows)\n"
+            "df = pd.DataFrame(rows)\n"
             f"resultado = df[df['{value_col}'] > df['{value_col}'].mean()].copy()\n"
             "print(resultado)\n"
         )
@@ -143,7 +143,7 @@ def _render_fallback_response(request: GenerateRequest, error_prev: str | None) 
         code = (
             "import pandas as pd\n\n"
             f"rows = {rows}\n"
-            f"{repair_comment}df = pd.DataFrame(rows)\n"
+            "df = pd.DataFrame(rows)\n"
             "print(df.head())\n"
             "print(df.describe(include='all'))\n"
         )
@@ -152,7 +152,7 @@ def _render_fallback_response(request: GenerateRequest, error_prev: str | None) 
             "import pandas as pd\n"
             "import matplotlib.pyplot as plt\n\n"
             f"rows = {rows}\n"
-            f"{repair_comment}df = pd.DataFrame(rows)\n"
+            "df = pd.DataFrame(rows)\n"
             f"serie = df.groupby('{group_col}', as_index=False)['{value_col}'].sum()\n"
             f"plt.bar(serie['{group_col}'], serie['{value_col}'])\n"
             "plt.tight_layout()\n"
@@ -163,7 +163,7 @@ def _render_fallback_response(request: GenerateRequest, error_prev: str | None) 
             "import numpy as np\n"
             "import pandas as pd\n\n"
             f"rows = {rows}\n"
-            f"{repair_comment}df = pd.DataFrame(rows)\n"
+            "df = pd.DataFrame(rows)\n"
             "matriz = df.select_dtypes(include='number').to_numpy()\n"
             "print('media:', np.mean(matriz).round(2))\n"
         )
@@ -171,7 +171,7 @@ def _render_fallback_response(request: GenerateRequest, error_prev: str | None) 
         code = (
             "import pandas as pd\n\n"
             f"rows = {rows}\n"
-            f"{repair_comment}df = pd.DataFrame(rows)\n"
+            "df = pd.DataFrame(rows)\n"
             f"resultado = df.groupby('{group_col}', as_index=False)['{value_col}'].sum()\n"
             "print(resultado)\n"
         )
@@ -199,6 +199,37 @@ def _render_fallback_response(request: GenerateRequest, error_prev: str | None) 
         f"{explanation}\n\n"
         "EJERCICIO: Cambia una agregacion o filtro y compara el resultado."
     )
+
+
+def _render_fallback_patch(request: GenerateRequest, section: str) -> str:
+    rows = _rows_for_prompt(request.contexto, seed=42 + abs(hash(request.tema)) % 1000)
+    group_col, value_col = _context_columns(request.contexto)
+    sec = section.lower().strip()
+    if sec == "codigo":
+        return (
+            "```python\n"
+            "import pandas as pd\n"
+            "# Comentario educativo 1\n"
+            "# Comentario educativo 2\n"
+            "# Comentario educativo 3\n"
+            "# Comentario educativo 4\n"
+            "# Comentario educativo 5\n"
+            f"rows = {rows}\n"
+            "df = pd.DataFrame(rows)\n"
+            f"resultado = df.groupby('{group_col}', as_index=False)['{value_col}'].sum()\n"
+            "print(resultado)\n"
+            "```"
+        )
+    if sec == "objetivo":
+        return f"Aprender {request.tema} en contexto de {request.contexto} con codigo ejecutable en Python."
+    if sec == "explicacion":
+        return (
+            "## EXPLICACION\n"
+            f"- El ejemplo usa columnas `{group_col}` y `{value_col}` para practicar el tema.\n"
+            "- Se construye el DataFrame con rows y se ejecuta una transformacion principal.\n"
+            "- El resultado final se imprime para verificar el comportamiento."
+        )
+    return ""
 
 
 class CodeGenerator:
@@ -259,20 +290,61 @@ class CodeGenerator:
             "[/INST]"
         )
 
-    def _generate_raw(self, request: GenerateRequest, error_prev: str | None, use_rag: bool) -> tuple[str, str, bool, str]:
-        prompt = self._build_prompt(request, error_prev, use_rag=use_rag)
+    def _generate_from_backend(self, prompt: str, request: GenerateRequest, error_prev: str | None) -> tuple[str, str, bool]:
         if self.use_local_model and self.local_model is not None:
             return (
-                self.local_model.generate(prompt=prompt, max_new_tokens=int(os.getenv("LOCAL_MODEL_MAX_NEW_TOKENS", "700"))),
+                self.local_model.generate(
+                    prompt=prompt,
+                    max_new_tokens=int(os.getenv("LOCAL_MODEL_MAX_NEW_TOKENS", "700")),
+                ),
                 "local",
                 False,
-                prompt,
             )
 
         if not self.use_real_llm or not self.llm_client.is_configured:
-            return _render_fallback_response(request, error_prev), "deterministic", True, prompt
+            return _render_fallback_response(request, error_prev), "deterministic", True
 
-        return self.llm_client.generate(prompt=prompt, system_prompt=SYSTEM_PROMPT_V2), "remote", False, prompt
+        return self.llm_client.generate(prompt=prompt, system_prompt=SYSTEM_PROMPT_V2), "remote", False
+
+    def _generate_raw(self, request: GenerateRequest, error_prev: str | None, use_rag: bool) -> tuple[str, str, bool, str]:
+        prompt = self._build_prompt(request, error_prev, use_rag=use_rag)
+        raw, backend, used_fallback = self._generate_from_backend(prompt=prompt, request=request, error_prev=error_prev)
+        return raw, backend, used_fallback, prompt
+
+    def _build_patch_prompt(self, *, section: str, instruction: str, previous_text: str) -> str:
+        sec = section.upper()
+        return (
+            f"<s>[INST] <<SYS>>\n{SYSTEM_PROMPT_V2}\n<</SYS>>\n\n"
+            "MODO PATCH QUIRURGICO.\n"
+            f"Seccion a corregir: ## {sec}\n"
+            f"Instruccion: {instruction}\n\n"
+            "REGLAS ESTRICTAS:\n"
+            "- NO copies ERRORES ni SALIDA_PREVIA dentro de codigo.\n"
+            "- Devuelve solamente la seccion solicitada.\n"
+            "- Si se solicita CODIGO, devuelve un unico bloque fence ```python ...``` y nada mas.\n"
+            "- No incluyas encabezados adicionales.\n\n"
+            "=== SALIDA PREVIA (NO COPIAR) ===\n"
+            f"{previous_text}\n"
+            "[/INST]"
+        )
+
+    def generate_patch(
+        self,
+        *,
+        request: GenerateRequest,
+        section: str,
+        instruction: str,
+        previous_text: str,
+    ) -> tuple[str, str, str, bool, str]:
+        prompt = self._build_patch_prompt(section=section, instruction=instruction, previous_text=previous_text)
+
+        if not self.use_real_llm and (not self.use_local_model or self.local_model is None):
+            raw = _render_fallback_patch(request, section=section)
+            return raw, _sanitize_model_text(raw), prompt, True, "deterministic"
+
+        raw, backend, used_fallback = self._generate_from_backend(prompt=prompt, request=request, error_prev=None)
+        sanitized = _sanitize_model_text(raw)
+        return raw, sanitized, prompt, used_fallback, backend
 
     def generate_with_raw(
         self,
