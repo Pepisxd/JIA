@@ -5,7 +5,11 @@ def test_groupby_validator_passes_valid_code() -> None:
     validator = EducationalValidator()
     code = """
 import pandas as pd
-# Comentario educativo
+# Comentario educativo 1
+# Comentario educativo 2
+# Comentario educativo 3
+# Comentario educativo 4
+# Comentario educativo 5
 df = pd.DataFrame([{"equipo":"A","goles":2},{"equipo":"B","goles":3}])
 resumen = df.groupby("equipo")["goles"].sum().reset_index()
 print(resumen)
@@ -28,13 +32,17 @@ print(resultado)
     assert any("boolean indexing" in err.lower() or ".query" in err for err in result.errors)
 
 
-def test_lectura_validator_requires_reader_and_head() -> None:
+def test_lectura_validator_requires_dataframe_and_head() -> None:
     validator = EducationalValidator()
     code = """
 import pandas as pd
-# Comentario educativo
-from io import StringIO
-df = pd.read_csv(StringIO("a,b\\n1,2"))
+# Comentario educativo 1
+# Comentario educativo 2
+# Comentario educativo 3
+# Comentario educativo 4
+# Comentario educativo 5
+rows = [{"item": "A", "valor": 1}, {"item": "B", "valor": 2}]
+df = pd.DataFrame(rows)
 print(df.head())
 """
     result = validator.validate("pandas_lectura", code, ["Paso 1", "Paso 2"])

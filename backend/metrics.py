@@ -38,6 +38,9 @@ class MetricsCollector:
             "educational_passed": response.educational_passed if response else False,
             "validation_errors": response.validation_errors if response else [],
             "error": error or (response.error if response else None),
+            "used_fallback": response.used_fallback if response else False,
+            "model_backend": response.model_backend if response else "unknown",
+            "post_processed": response.post_processed if response else False,
         }
         with self.events_file.open("a", encoding="utf-8") as f:
             f.write(json.dumps(event, ensure_ascii=False) + "\n")

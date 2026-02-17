@@ -1,46 +1,105 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
-from pathlib import Path
+import re
+from dataclasses import dataclass
+from random import Random
 
 from backend.llm_client import AnthropicClient, LLMClientError
+from backend.local_model import get_local_model
 from backend.models import GenerateRequest, ParsedLLMResponse
 from backend.parser import ParseError, parse_llm_response
 from backend.rag.retriever import ExampleRetriever
 
-TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "template_base.txt"
+SYSTEM_PROMPT_V2 = """Eres un asistente educativo de Python para ciencia de datos.
+REGLAS OBLIGATORIAS:
+1) Responde EXCLUSIVAMENTE en espanol.
+2) Prohibido usar rutas o leer archivos: /home, /kaggle, /content, ../input, pd.read_csv, read_parquet, read_excel.
+3) SIEMPRE incluye dataset sintetico pequeno y el codigo lo construye con pd.DataFrame.
+4) EXPLICACION especifica, menciona columnas/variables reales.
+FORMATO EXACTO:
+## OBJETIVO
+## DATASET
+## CODIGO
+## EXPLICACION"""
+
+LOGGER = logging.getLogger(__name__)
 
 
 class GenerationError(RuntimeError):
     pass
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+@dataclass(slots=True)
+class GenerationTrace:
+    parsed: ParsedLLMResponse
+    raw_text_original: str
+    sanitized_text: str
+    used_fallback: bool
+    model_backend: str
+    post_processed: bool = False
+
+
+def _sanitize_model_text(text: str) -> str:
+    # Sanitizer only: remove generation residue tokens and normalize whitespace.
+    out = text.replace("</s>", " ").replace("<s>", " ")
+    out = re.sub(r"<\|[^>]+?\|>", " ", out)
+    out = re.sub(r"\r\n?", "\n", out)
+    out = re.sub(r"[ \t]+\n", "\n", out)
+    out = re.sub(r"\n{3,}", "\n\n", out)
+    return out.strip()
+
+
 def _context_rows(contexto: str) -> list[dict[str, int | str]]:
     packs: dict[str, list[dict[str, int | str]]] = {
         "deportes": [
-            {"equipo": "Tigres", "goles": 3},
-            {"equipo": "Tigres", "goles": 2},
-            {"equipo": "Lobos", "goles": 1},
-            {"equipo": "Lobos", "goles": 4},
+            {"equipo": "Tigres", "goles": 3, "partidos": 2},
+            {"equipo": "Tigres", "goles": 2, "partidos": 2},
+            {"equipo": "Lobos", "goles": 1, "partidos": 1},
+            {"equipo": "Lobos", "goles": 4, "partidos": 3},
+            {"equipo": "Rojos", "goles": 2, "partidos": 2},
+            {"equipo": "Rojos", "goles": 5, "partidos": 4},
+            {"equipo": "Azules", "goles": 1, "partidos": 1},
+            {"equipo": "Azules", "goles": 3, "partidos": 2},
         ],
         "finanzas": [
-            {"region": "Norte", "ventas": 1200},
-            {"region": "Norte", "ventas": 900},
-            {"region": "Sur", "ventas": 1400},
-            {"region": "Sur", "ventas": 1100},
+            {"region": "Norte", "ventas": 1200, "costos": 700},
+            {"region": "Norte", "ventas": 900, "costos": 500},
+            {"region": "Sur", "ventas": 1400, "costos": 850},
+            {"region": "Sur", "ventas": 1100, "costos": 620},
+            {"region": "Este", "ventas": 1700, "costos": 910},
+            {"region": "Este", "ventas": 1550, "costos": 870},
+            {"region": "Oeste", "ventas": 980, "costos": 560},
+            {"region": "Oeste", "ventas": 1320, "costos": 790},
         ],
         "videojuegos": [
-            {"juego": "RacingX", "sesiones": 120},
-            {"juego": "RacingX", "sesiones": 95},
-            {"juego": "ArenaZ", "sesiones": 140},
-            {"juego": "ArenaZ", "sesiones": 100},
+            {"juego": "RacingX", "sesiones": 120, "usuarios": 50},
+            {"juego": "RacingX", "sesiones": 95, "usuarios": 41},
+            {"juego": "ArenaZ", "sesiones": 140, "usuarios": 60},
+            {"juego": "ArenaZ", "sesiones": 100, "usuarios": 46},
+            {"juego": "MysticQ", "sesiones": 130, "usuarios": 58},
+            {"juego": "MysticQ", "sesiones": 110, "usuarios": 49},
+            {"juego": "NovaR", "sesiones": 84, "usuarios": 36},
+            {"juego": "NovaR", "sesiones": 90, "usuarios": 38},
         ],
         "ciencia": [
-            {"experimento": "A", "medicion": 12},
-            {"experimento": "A", "medicion": 9},
-            {"experimento": "B", "medicion": 14},
-            {"experimento": "B", "medicion": 10},
+            {"experimento": "A", "medicion": 12, "temperatura": 21.4},
+            {"experimento": "A", "medicion": 9, "temperatura": 20.8},
+            {"experimento": "B", "medicion": 14, "temperatura": 22.6},
+            {"experimento": "B", "medicion": 10, "temperatura": 21.9},
+            {"experimento": "C", "medicion": 11, "temperatura": 23.1},
+            {"experimento": "C", "medicion": 13, "temperatura": 22.8},
+            {"experimento": "D", "medicion": 8, "temperatura": 20.1},
+            {"experimento": "D", "medicion": 12, "temperatura": 21.0},
         ],
     }
     return packs[contexto]
@@ -56,119 +115,199 @@ def _context_columns(contexto: str) -> tuple[str, str]:
     return "experimento", "medicion"
 
 
+def _rows_for_prompt(contexto: str, seed: int) -> list[dict[str, int | str]]:
+    rows = _context_rows(contexto)
+    rng = Random(seed)
+    target = rng.randint(8, 12)
+    if len(rows) <= target:
+        return rows
+    return rows[:target]
+
+
 def _render_fallback_response(request: GenerateRequest, error_prev: str | None) -> str:
-    rows = _context_rows(request.contexto)
+    rows = _rows_for_prompt(request.contexto, seed=abs(hash(f"{request.tema}:{request.contexto}:{request.nivel}")) % 10_000)
     group_col, value_col = _context_columns(request.contexto)
-    dataset_name = f"dataset_{request.contexto}"
-    repair_comment = f"# Reparacion aplicada: {error_prev}\n" if error_prev else ""
+    repair_comment = f"# Ajuste por error previo: {error_prev}\n" if error_prev else ""
+
     if request.tema == "pandas_filtrado":
-        code = f"""import pandas as pd
-# Cargamos datos tabulares para practicar filtrado.
-{repair_comment}df = pd.DataFrame({rows})
-filtrado = df[df["{value_col}"] > df["{value_col}"].mean()]
-print(filtrado)
-"""
-        objetivo = "Aprender filtrado de datos con pandas usando condiciones booleanas."
-        explicacion = [
-            "Creamos un DataFrame con datos de contexto.",
-            "Calculamos una condicion booleana sobre la metrica.",
-            "Mostramos solo los registros que cumplen la condicion.",
-        ]
-        ejercicio = "Prueba ahora un filtro con `<` en lugar de `>`."
+        code = (
+            "import pandas as pd\n\n"
+            f"rows = {rows}\n"
+            f"{repair_comment}df = pd.DataFrame(rows)\n"
+            f"resultado = df[df['{value_col}'] > df['{value_col}'].mean()].copy()\n"
+            "print(resultado)\n"
+        )
     elif request.tema == "pandas_lectura":
-        code = """import pandas as pd
-from io import StringIO
-# Simulamos un CSV en memoria para practicar lectura.
-csv_text = "item,valor\\nA,10\\nB,20\\nC,30\\n"
-df = pd.read_csv(StringIO(csv_text))
-print(df.head())
-"""
-        objetivo = "Aprender lectura de datos con pandas y vista preliminar con head()."
-        explicacion = [
-            "Creamos una fuente CSV de ejemplo.",
-            "Leemos los datos con `pd.read_csv`.",
-            "Visualizamos las primeras filas con `head()`.",
-        ]
-        ejercicio = "Cambia el CSV agregando otra columna y vuelve a mostrar `head()`."
-        rows = [{"item": "A", "valor": 10}, {"item": "B", "valor": 20}, {"item": "C", "valor": 30}]
-        dataset_name = "dataset_lectura_csv"
+        code = (
+            "import pandas as pd\n\n"
+            f"rows = {rows}\n"
+            f"{repair_comment}df = pd.DataFrame(rows)\n"
+            "print(df.head())\n"
+            "print(df.describe(include='all'))\n"
+        )
+    elif request.tema == "matplotlib_basico":
+        code = (
+            "import pandas as pd\n"
+            "import matplotlib.pyplot as plt\n\n"
+            f"rows = {rows}\n"
+            f"{repair_comment}df = pd.DataFrame(rows)\n"
+            f"serie = df.groupby('{group_col}', as_index=False)['{value_col}'].sum()\n"
+            f"plt.bar(serie['{group_col}'], serie['{value_col}'])\n"
+            "plt.tight_layout()\n"
+            "plt.show()\n"
+        )
+    elif request.tema == "numpy_basico":
+        code = (
+            "import numpy as np\n"
+            "import pandas as pd\n\n"
+            f"rows = {rows}\n"
+            f"{repair_comment}df = pd.DataFrame(rows)\n"
+            "matriz = df.select_dtypes(include='number').to_numpy()\n"
+            "print('media:', np.mean(matriz).round(2))\n"
+        )
     else:
-        code = f"""import pandas as pd
-# Cargamos datos de ejemplo en un DataFrame.
-{repair_comment}df = pd.DataFrame({rows})
-resultado = df.groupby("{group_col}")["{value_col}"].sum().reset_index()
-print(resultado)
-"""
-        objetivo = "Aprender a agrupar datos y calcular agregaciones con pandas."
-        explicacion = [
-            "Cargamos datos de ejemplo en un DataFrame.",
-            f"Agrupamos por la columna categórica `{group_col}`.",
-            "Aplicamos una agregacion para resumir resultados.",
-        ]
-        ejercicio = "Cambia la suma por promedio usando `.mean()` y compara resultados."
+        code = (
+            "import pandas as pd\n\n"
+            f"rows = {rows}\n"
+            f"{repair_comment}df = pd.DataFrame(rows)\n"
+            f"resultado = df.groupby('{group_col}', as_index=False)['{value_col}'].sum()\n"
+            "print(resultado)\n"
+        )
 
-    dataset_json = json.dumps(
-        {"nombre": dataset_name, "data": rows, "codigo_carga": f"df = pd.DataFrame({rows})"},
-        ensure_ascii=False,
-        indent=2,
+    dataset_block = (
+        "```python\n"
+        f"rows = {json.dumps(rows, ensure_ascii=False, indent=2)}\n"
+        "df = pd.DataFrame(rows)\n"
+        "print(df.head())\n"
+        "```"
     )
-    exp_lines = "\n".join(f"- {line}" for line in explicacion)
-
-    return f"""OBJETIVO: {objetivo}
-
-DATASET_JSON:
-```json
-{dataset_json}
-```
-
-CODIGO:
-```python
-{code}
-```
-
-EXPLICACION:
-{exp_lines}
-
-EJERCICIO: {ejercicio}
-"""
+    explanation = (
+        f"- Se define un dataset sintetico con columnas como `{group_col}` y `{value_col}` para trabajar offline.\n"
+        f"- El codigo construye `df` con `pd.DataFrame(rows)` y aplica la operacion principal del tema `{request.tema}`.\n"
+        "- Se imprime un resultado verificable para facilitar la validacion y la practica."
+    )
+    return (
+        "## OBJETIVO\n"
+        f"Aprender {request.tema} en contexto de {request.contexto} con un ejemplo reproducible.\n\n"
+        "## DATASET\n"
+        f"{dataset_block}\n\n"
+        "## CODIGO\n"
+        f"```python\n{code}```\n\n"
+        "## EXPLICACION\n"
+        f"{explanation}\n\n"
+        "EJERCICIO: Cambia una agregacion o filtro y compara el resultado."
+    )
 
 
 class CodeGenerator:
     def __init__(
         self,
         llm_client: AnthropicClient | None = None,
-        template_path: Path = TEMPLATE_PATH,
         retriever: ExampleRetriever | None = None,
     ) -> None:
+        self.use_local_model = _env_bool("USE_LOCAL_MODEL", True)
         self.llm_client = llm_client or AnthropicClient()
-        self.template = template_path.read_text(encoding="utf-8")
-        self.use_real_llm = os.getenv("USE_REAL_LLM", "false").strip().lower() == "true"
-        prefer_chroma = os.getenv("RAG_PREFER_CHROMA", "false").strip().lower() == "true"
+        self.use_real_llm = _env_bool("USE_REAL_LLM", False)
+        prefer_chroma = _env_bool("RAG_PREFER_CHROMA", False)
         self.retriever = retriever or ExampleRetriever(prefer_chroma=prefer_chroma)
+        self.local_model = None
+        if self.use_local_model:
+            model_base = os.getenv("MODEL_BASE", "codellama/CodeLlama-7b-Instruct-hf")
+            adapter_dir = os.getenv("MODEL_PATH", "./models/codellama-edugen-v2")
+            device_map = os.getenv("MODEL_DEVICE_MAP", "auto")
+            local_model_required = _env_bool("LOCAL_MODEL_REQUIRED", False)
+            try:
+                self.local_model = get_local_model(model_base=model_base, adapter_dir=adapter_dir, device_map=device_map)
+            except Exception as exc:  # noqa: BLE001
+                if local_model_required:
+                    raise
+                self.local_model = None
+                self.use_local_model = False
+                LOGGER.warning(
+                    "No se pudo cargar LocalEduModel (%s). Se usa fallback (LLM remoto o respuesta local determinista).",
+                    exc,
+                )
 
     def _build_prompt(self, request: GenerateRequest, error_prev: str | None, use_rag: bool) -> str:
-        prompt = self.template
-        prompt = prompt.replace("{tema}", request.tema)
-        prompt = prompt.replace("{nivel}", request.nivel)
-        prompt = prompt.replace("{contexto}", request.contexto)
-        prompt = prompt.replace("{tipo}", request.tipo)
-        prompt = prompt.replace("{error_prev}", error_prev or "N/A")
+        rows = _rows_for_prompt(request.contexto, seed=42 + abs(hash(request.tema)) % 1000)
+        rag_text = ""
         if use_rag:
             query = f"{request.tema} {request.contexto} {request.nivel}"
-            examples = self.retriever.retrieve(query=query, limit=3)
+            examples = self.retriever.retrieve(query=query, limit=2)
             if examples:
-                rag_lines = ["\nEJEMPLOS_RAG_RELEVANTES:"]
+                rag_lines = ["Ejemplos recuperados (resumen):"]
                 for idx, item in enumerate(examples, start=1):
-                    rag_lines.append(f"{idx}. Q: {item.get('question', '')}")
-                    rag_lines.append(f"   A: {item.get('answer', '')}")
-                prompt = f"{prompt}\n" + "\n".join(rag_lines)
-        return prompt
+                    rag_lines.append(f"{idx}. {item.get('question', '')[:180]}")
+                rag_text = "\n" + "\n".join(rag_lines)
 
-    def _generate_raw(self, request: GenerateRequest, error_prev: str | None, use_rag: bool) -> str:
+        err_text = f"\nError previo a corregir: {error_prev}" if error_prev else ""
+        dataset_hint = json.dumps(rows, ensure_ascii=False, indent=2)
+        return (
+            f"<s>[INST] <<SYS>>\n{SYSTEM_PROMPT_V2}\n<</SYS>>\n\n"
+            "Genera un ejemplo educativo ejecutable.\n"
+            f"Tema: {request.tema}\n"
+            f"Nivel: {request.nivel}\n"
+            f"Contexto: {request.contexto}\n"
+            f"Tipo: {request.tipo}\n"
+            "Usa 8-15 filas y columnas coherentes con el contexto.\n"
+            f"Sugerencia de dataset base:\n{dataset_hint}\n"
+            f"{rag_text}"
+            f"{err_text}\n"
+            "Recuerda: SOLO espanol y sin lecturas de archivos.\n"
+            "[/INST]"
+        )
+
+    def _generate_raw(self, request: GenerateRequest, error_prev: str | None, use_rag: bool) -> tuple[str, str, bool]:
         prompt = self._build_prompt(request, error_prev, use_rag=use_rag)
+        if self.use_local_model and self.local_model is not None:
+            return (
+                self.local_model.generate(prompt=prompt, max_new_tokens=int(os.getenv("LOCAL_MODEL_MAX_NEW_TOKENS", "700"))),
+                "local",
+                False,
+            )
+
         if not self.use_real_llm or not self.llm_client.is_configured:
-            return _render_fallback_response(request, error_prev)
-        return self.llm_client.generate(prompt=prompt, system_prompt="Genera material educativo claro y ejecutable.")
+            return _render_fallback_response(request, error_prev), "deterministic", True
+
+        return self.llm_client.generate(prompt=prompt, system_prompt=SYSTEM_PROMPT_V2), "remote", False
+
+    def generate_with_raw(
+        self,
+        request: GenerateRequest,
+        error_prev: str | None = None,
+        attempt: int = 1,
+        use_rag: bool = False,
+    ) -> GenerationTrace:
+        raw_original = ""
+        sanitized = ""
+        model_backend = "deterministic"
+        used_fallback = False
+        try:
+            raw_original, model_backend, used_fallback = self._generate_raw(request, error_prev, use_rag=use_rag)
+            sanitized = _sanitize_model_text(raw_original)
+            parsed = parse_llm_response(sanitized)
+            return GenerationTrace(
+                parsed=parsed,
+                raw_text_original=raw_original,
+                sanitized_text=sanitized,
+                used_fallback=used_fallback,
+                model_backend=model_backend,
+                post_processed=False,
+            )
+        except ParseError:
+            fallback_raw = _render_fallback_response(request, error_prev)
+            fallback_sanitized = _sanitize_model_text(fallback_raw)
+            parsed = parse_llm_response(fallback_sanitized)
+            return GenerationTrace(
+                parsed=parsed,
+                raw_text_original=raw_original or fallback_raw,
+                sanitized_text=fallback_sanitized,
+                used_fallback=True,
+                model_backend="deterministic",
+                post_processed=False,
+            )
+        except LLMClientError as exc:
+            raise GenerationError(f"Fallo en generacion (attempt {attempt}): {exc}") from exc
 
     def generate(
         self,
@@ -177,12 +316,5 @@ class CodeGenerator:
         attempt: int = 1,
         use_rag: bool = False,
     ) -> ParsedLLMResponse:
-        try:
-            raw = self._generate_raw(request, error_prev, use_rag=use_rag)
-            return parse_llm_response(raw)
-        except ParseError:
-            # Si el LLM no respeta el formato exacto, mantenemos el flujo vivo con fallback determinista.
-            fallback_raw = _render_fallback_response(request, error_prev)
-            return parse_llm_response(fallback_raw)
-        except LLMClientError as exc:
-            raise GenerationError(f"Fallo en generacion (attempt {attempt}): {exc}") from exc
+        trace = self.generate_with_raw(request=request, error_prev=error_prev, attempt=attempt, use_rag=use_rag)
+        return trace.parsed

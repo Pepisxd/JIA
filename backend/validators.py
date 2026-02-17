@@ -17,11 +17,34 @@ class EducationalValidator:
         self.min_lines = min_lines
         self.max_lines = max_lines
         self._agg_patterns = [".sum(", ".mean(", ".count(", ".agg(", ".min(", ".max("]
+        self._forbidden_tokens = [
+            "/home",
+            "/kaggle",
+            "/content",
+            "../input",
+            "read_csv(",
+            "read_parquet(",
+            "read_excel(",
+        ]
+        self._english_markers = ["what is", "how many", "difference between", "explain why", "find the"]
+        self.min_educational_comments = 5
 
-    def validate(self, tema: TemaLiteral, code: str, explanation: list[str] | None = None) -> ValidationResult:
+    def validate(
+        self,
+        tema: TemaLiteral,
+        code: str,
+        explanation: list[str] | None = None,
+        *,
+        objective: str = "",
+        raw_text: str | None = None,
+        dataset_load_code: str = "",
+    ) -> ValidationResult:
         errors: list[str] = []
         self._validate_generic(code, explanation or [], errors)
         self._validate_topic_specific(tema, code, errors)
+        self._forbidden_paths_validator(code=code, raw_text=raw_text, errors=errors)
+        self._dataset_section_validator(raw_text=raw_text, dataset_load_code=dataset_load_code, code=code, errors=errors)
+        self._spanish_validator_simple(objective=objective, explanation=explanation or [], raw_text=raw_text, errors=errors)
         return ValidationResult(passed=not errors, errors=errors)
 
     def _validate_generic(self, code: str, explanation: list[str], errors: list[str]) -> None:
@@ -30,8 +53,11 @@ class EducationalValidator:
             errors.append(f"Codigo demasiado corto: {len(lines)} lineas (min {self.min_lines}).")
         if len(lines) > self.max_lines:
             errors.append(f"Codigo demasiado largo: {len(lines)} lineas (max {self.max_lines}).")
-        if not any(line.strip().startswith("#") for line in code.splitlines()):
-            errors.append("Faltan comentarios educativos en el codigo.")
+        comment_lines = [line for line in code.splitlines() if line.strip().startswith("#")]
+        if len(comment_lines) < self.min_educational_comments:
+            errors.append(
+                f"Faltan comentarios educativos en el codigo: {len(comment_lines)} encontrados, minimo {self.min_educational_comments}."
+            )
         if len(explanation) < 2:
             errors.append("La explicacion debe incluir al menos 2 pasos.")
 
@@ -58,8 +84,60 @@ class EducationalValidator:
             return
 
         if tema == "pandas_lectura":
-            has_reader = ("pd.read_csv(" in code_low) or ("pd.read_excel(" in code_low)
-            if not has_reader:
-                errors.append("Tema pandas_lectura requiere pd.read_csv() o pd.read_excel().")
+            has_dataframe_build = "pd.dataframe(" in code_low
+            if not has_dataframe_build:
+                errors.append("Tema pandas_lectura requiere construir dataset con pd.DataFrame().")
             if ".head(" not in code_low:
                 errors.append("Tema pandas_lectura requiere mostrar preview con .head().")
+
+    def _forbidden_paths_validator(self, code: str, raw_text: str | None, errors: list[str]) -> None:
+        text = f"{code}\n{raw_text or ''}".lower()
+        found = [token for token in self._forbidden_tokens if token in text]
+        if found:
+            errors.append(f"forbidden_paths_validator: tokens prohibidos detectados: {', '.join(found)}")
+
+    def _dataset_section_validator(
+        self,
+        *,
+        raw_text: str | None,
+        dataset_load_code: str,
+        code: str,
+        errors: list[str],
+    ) -> None:
+        if raw_text is not None:
+            text = raw_text.lower()
+            has_dataset_header = "## dataset" in text
+            if not has_dataset_header:
+                errors.append("dataset_section_validator: falta sección ## DATASET.")
+        merged = f"{dataset_load_code}\n{code}".lower()
+        if "pd.dataframe(" not in merged:
+            errors.append("dataset_section_validator: falta uso de pd.DataFrame en dataset/codigo.")
+
+    def _spanish_validator_simple(
+        self,
+        *,
+        objective: str,
+        explanation: list[str],
+        raw_text: str | None,
+        errors: list[str],
+    ) -> None:
+        if not objective and raw_text is None:
+            return
+        objective_low = objective.lower()
+        detected = [marker for marker in self._english_markers if marker in objective_low]
+        if detected:
+            errors.append(
+                "spanish_validator_simple: objetivo parece estar en ingles; marcadores detectados: "
+                + ", ".join(detected)
+            )
+
+        if raw_text is None:
+            return
+
+        text = f"{objective}\n{' '.join(explanation)}\n{raw_text}"
+        text_low = text.lower()
+        spanish_hints = [" el ", " la ", " de ", " para ", " datos ", " código ", " explicacion ", " objetivo "]
+        score = sum(1 for hint in spanish_hints if hint in f" {text_low} ")
+        has_accent = any(ch in text for ch in "áéíóúñÁÉÍÓÚÑ")
+        if score < 2 and not has_accent:
+            errors.append("spanish_validator_simple: no hay suficientes señales de español.")

@@ -52,6 +52,11 @@ class GenerateResponse(BaseModel):
     output: str
     duration_ms: float | None = None
     error: str | None = None
+    raw_text_original: str = ""
+    sanitized_text: str = ""
+    used_fallback: bool = False
+    model_backend: Literal["local", "remote", "deterministic"] = "deterministic"
+    post_processed: bool = False
 
 
 class HistoryResponseItem(BaseModel):
