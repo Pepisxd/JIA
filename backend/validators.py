@@ -30,6 +30,18 @@ class EducationalValidator:
         self._english_markers = ["what is", "how many", "difference between", "explain why", "find the"]
         self.min_educational_comments = 5
 
+    def _infer_dataset_columns(self, rows: list[dict]) -> list[str]:
+        ordered: list[str] = []
+        seen: set[str] = set()
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            for key in row.keys():
+                if isinstance(key, str) and key not in seen:
+                    seen.add(key)
+                    ordered.append(key)
+        return ordered
+
     def validate(
         self,
         tema: TemaLiteral,
@@ -168,15 +180,14 @@ class EducationalValidator:
     def _dataset_code_coherence_validator(self, *, code: str, dataset_data: list[dict], errors: list[str]) -> None:
         if not dataset_data:
             return
-        first_row = next((row for row in dataset_data if isinstance(row, dict) and row), None)
-        if first_row is None:
+        valid_rows = [row for row in dataset_data if isinstance(row, dict) and row]
+        if not valid_rows:
             return
-        dataset_keys = [k for k in first_row.keys() if isinstance(k, str)]
+        dataset_keys = self._infer_dataset_columns(valid_rows)
         if not dataset_keys:
             return
 
-        code_norm = re.sub(r"\s+", "", code.lower())
-        if "pd.dataframe(rows)" not in code_norm:
+        if not re.search(r"pd\.dataframe\(\s*rows\b", code, flags=re.I):
             errors.append(
                 "code_overrides_dataset: el codigo debe construir DataFrame desde rows usando pd.DataFrame(rows)."
             )
@@ -190,15 +201,23 @@ class EducationalValidator:
         if not code_keys:
             return
         dataset_key_set = set(dataset_keys)
-        if code_keys != dataset_key_set:
+        # Permitimos subconjuntos para tolerar columnas opcionales en algunas filas.
+        # Solo fallamos cuando el codigo introduce columnas ajenas al dataset real.
+        if not code_keys.issubset(dataset_key_set):
             errors.append(
                 "code_overrides_dataset: ## CODIGO redefine rows con columnas distintas al ## DATASET."
             )
             return
 
         # Guardrail adicional: al menos una columna categorica y una numerica usadas en el codigo.
-        categorical = [k for k, v in first_row.items() if isinstance(v, str)]
-        numeric = [k for k, v in first_row.items() if isinstance(v, Number) and not isinstance(v, bool)]
+        categorical = [
+            col for col in dataset_keys if any(isinstance(row.get(col), str) for row in valid_rows)
+        ]
+        numeric = [
+            col
+            for col in dataset_keys
+            if any(isinstance(row.get(col), Number) and not isinstance(row.get(col), bool) for row in valid_rows)
+        ]
         if categorical and categorical[0] not in code:
             errors.append("code_overrides_dataset: el codigo no usa la columna categorica esperada del dataset.")
         if numeric and numeric[0] not in code:

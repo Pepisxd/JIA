@@ -52,37 +52,53 @@ def _inject_educational_comments(code: str, min_comments: int = 5) -> str:
 
 def _build_deterministic_code_from_dataset(dataset_data: list[dict]) -> str:
     rows = [row for row in dataset_data if isinstance(row, dict)]
+    serialized_rows = json.dumps(rows, ensure_ascii=False, indent=2)
+    base = (
+        "import pandas as pd\n"
+        f"rows = {serialized_rows}\n"
+        "# Comentario educativo 1: construir DataFrame desde rows del dataset.\n"
+        "# Comentario educativo 2: inspeccionar las primeras filas para validar columnas.\n"
+        "# Comentario educativo 3: preparar un resumen por columnas relevantes.\n"
+        "# Comentario educativo 4: aplicar una agregacion reproducible en local.\n"
+        "# Comentario educativo 5: revisar el resultado para interpretar hallazgos.\n"
+        "df = pd.DataFrame(rows)\n"
+        "print(df.head())\n"
+    )
     if not rows:
         return (
-            "import pandas as pd\n"
-            "# Comentario educativo 1\n# Comentario educativo 2\n# Comentario educativo 3\n"
-            "# Comentario educativo 4\n# Comentario educativo 5\n"
-            "df = pd.DataFrame(rows)\n"
-            "print(df.head())"
+            base
+            + "df_safe = pd.DataFrame(rows, columns=['categoria', 'valor'])\n"
+            + "resumen = df_safe.groupby('categoria', as_index=False)['valor'].sum()\n"
+            + "print(resumen)\n"
+            + "print('Dataset vacio: no hay filas, pero el flujo se ejecuto sin error.')"
         )
 
-    sample = rows[0]
-    keys = _infer_dataset_columns(rows) or [k for k in sample.keys() if isinstance(k, str)]
-    categorical = next((k for k in keys if isinstance(sample.get(k), str)), keys[0])
+    keys = _infer_dataset_columns(rows)
+    if not keys:
+        return (
+            base
+            + "df_safe = pd.DataFrame(rows, columns=['categoria', 'valor'])\n"
+            + "resumen = df_safe.groupby('categoria', as_index=False)['valor'].sum()\n"
+            + "print(resumen)\n"
+            + "print('Dataset sin columnas validas detectadas; se uso esquema seguro.')"
+        )
+
+    categorical = next(
+        (col for col in keys if any(isinstance(row.get(col), str) for row in rows)),
+        keys[0],
+    )
     numeric = next(
         (
-            k
-            for k in keys
-            if isinstance(sample.get(k), Number) and not isinstance(sample.get(k), bool)
+            col
+            for col in keys
+            if any(isinstance(row.get(col), Number) and not isinstance(row.get(col), bool) for row in rows)
         ),
         keys[1] if len(keys) > 1 else keys[0],
     )
     return (
-        "import pandas as pd\n"
-        "# Comentario educativo 1: construir DataFrame desde rows del dataset.\n"
-        "# Comentario educativo 2: inspeccionar las primeras filas para validar columnas.\n"
-        "# Comentario educativo 3: agrupar por la columna categorica principal.\n"
-        "# Comentario educativo 4: aplicar suma sobre la columna numerica principal.\n"
-        "# Comentario educativo 5: mostrar el resumen para interpretar resultados.\n"
-        "df = pd.DataFrame(rows)\n"
-        "print(df.head())\n"
-        f"resumen = df.groupby('{categorical}', as_index=False)['{numeric}'].sum()\n"
-        "print(resumen)"
+        base
+        + f"resumen = df.groupby('{categorical}', as_index=False)['{numeric}'].sum()\n"
+        + "print(resumen)"
     )
 
 
@@ -427,13 +443,8 @@ class ValidatingRepairLoop(RepairLoop):
         lowered = [err.lower() for err in errors]
         if any("code_overrides_dataset" in err for err in lowered):
             return ("deterministic", "codigo", "rebuild_code_from_dataset")
-        if any("fuga del repair prompt" in err for err in lowered):
-            return (
-                "model",
-                "codigo",
-                "Devuelve unicamente el bloque completo de ## CODIGO en un fence ```python ...``` y nada mas. "
-                "No incluyas listas, encabezados, ni texto fuera de Python.",
-            )
+        if any(("fuga del repair prompt" in err) or ("texto no ejecutable detectado" in err) for err in lowered):
+            return ("deterministic", "codigo", "rebuild_code_from_dataset")
         if any("comentarios educativos" in err for err in lowered):
             return ("deterministic", "codigo", "inject_comments")
         if any("spanish_validator_simple" in err for err in lowered):

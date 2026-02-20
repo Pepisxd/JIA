@@ -88,3 +88,93 @@ print(df)
     )
     assert result.passed is False
     assert any("code_overrides_dataset" in err for err in result.errors)
+
+
+def test_dataset_code_coherence_with_incomplete_first_row_does_not_fail() -> None:
+    validator = EducationalValidator()
+    code = """
+import pandas as pd
+# Comentario educativo 1
+# Comentario educativo 2
+# Comentario educativo 3
+# Comentario educativo 4
+# Comentario educativo 5
+rows = [{"equipo": "Tigres", "goles": 2, "partidos": 4}]
+df = pd.DataFrame(rows)
+resumen = df.groupby("equipo", as_index=False)["goles"].sum()
+print(resumen)
+"""
+    dataset_data = [
+        {"equipo": "Tigres", "goles": 2},
+        {"equipo": "Tigres", "goles": 2, "partidos": 4},
+    ]
+    result = validator.validate(
+        "pandas_groupby",
+        code,
+        ["Paso 1", "Paso 2"],
+        objective="Objetivo",
+        raw_text="## DATASET",
+        dataset_load_code="df = pd.DataFrame(rows)",
+        dataset_data=dataset_data,
+    )
+    assert all("code_overrides_dataset" not in err for err in result.errors)
+
+
+def test_dataset_code_coherence_allows_subset_keys_when_rows_redefined() -> None:
+    validator = EducationalValidator()
+    code = """
+import pandas as pd
+# Comentario educativo 1
+# Comentario educativo 2
+# Comentario educativo 3
+# Comentario educativo 4
+# Comentario educativo 5
+rows = [{"equipo": "Tigres", "goles": 2}]
+df = pd.DataFrame(rows)
+resumen = df.groupby("equipo", as_index=False)["goles"].sum()
+print(resumen)
+"""
+    dataset_data = [
+        {"equipo": "Tigres", "goles": 2},
+        {"equipo": "Tigres", "goles": 2, "partidos": 4},
+    ]
+    result = validator.validate(
+        "pandas_groupby",
+        code,
+        ["Paso 1", "Paso 2"],
+        objective="Objetivo",
+        raw_text="## DATASET",
+        dataset_load_code="df = pd.DataFrame(rows)",
+        dataset_data=dataset_data,
+    )
+    assert all("code_overrides_dataset" not in err for err in result.errors)
+
+
+def test_dataset_code_coherence_accepts_dataframe_rows_with_columns_argument() -> None:
+    validator = EducationalValidator()
+    code = """
+import pandas as pd
+# Comentario educativo 1
+# Comentario educativo 2
+# Comentario educativo 3
+# Comentario educativo 4
+# Comentario educativo 5
+rows = [{"equipo": "Tigres", "goles": 2}]
+df = pd.DataFrame(rows, columns=["equipo", "goles"])
+resumen = df.groupby("equipo", as_index=False)["goles"].sum()
+print(resumen)
+"""
+    dataset_data = [
+        {"equipo": "Tigres", "goles": 2},
+        {"equipo": "Tigres", "goles": 3, "partidos": 1},
+    ]
+    result = validator.validate(
+        "pandas_groupby",
+        code,
+        ["Paso 1", "Paso 2"],
+        objective="Objetivo",
+        raw_text="## DATASET",
+        dataset_load_code="df = pd.DataFrame(rows)",
+        dataset_data=dataset_data,
+    )
+    assert all("code_overrides_dataset" not in err for err in result.errors)

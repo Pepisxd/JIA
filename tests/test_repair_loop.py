@@ -190,8 +190,12 @@ class StubDatasetMismatchGenerator:
             dataset=dataset,
             codigo=(
                 "import pandas as pd\n"
-                "# c1\n# c2\n# c3\n# c4\n# c5\n"
-                "rows = [{'region':'Norte','ventas':10,'mes':1}]\n"
+                "# Comentario educativo 1\n"
+                "# Comentario educativo 2\n"
+                "# Comentario educativo 3\n"
+                "# Comentario educativo 4\n"
+                "# Comentario educativo 5\n"
+                "rows = [{'region': 'Norte', 'ventas': 10, 'mes': 1}]\n"
                 "df = pd.DataFrame(rows)\n"
                 "print(df.head())"
             ),
@@ -227,8 +231,139 @@ def test_validating_repair_loop_rebuilds_code_when_dataset_is_overridden() -> No
     assert result.tests_passed is True
     assert result.educational_passed is True
     assert result.attempts == 1
+    assert result.model_backend == "deterministic"
+    assert result.used_fallback is True
     code_low = result.codigo.lower().replace(" ", "")
     assert "pd.dataframe(rows)" in code_low
+    assert "rows=[" in code_low
     assert "groupby('equipo'" in code_low
     assert "['goles']" in code_low
     assert "region" not in code_low
+
+
+class StubLeakDeterministicGenerator:
+    def generate_with_raw(
+        self,
+        request: GenerateRequest,
+        error_prev: str | None = None,
+        attempt: int = 1,
+        use_rag: bool = False,
+    ) -> GenerationTrace:
+        _ = request, error_prev, attempt, use_rag
+        dataset = DatasetInfo(
+            nombre="demo",
+            data=[{"equipo": "A", "goles": 3, "partidos": 1}, {"equipo": "B", "goles": 1, "partidos": 2}],
+            codigo_carga="df = pd.DataFrame(rows)",
+        )
+        parsed = ParsedLLMResponse(
+            objetivo="Objetivo de analisis de datos para deportes.",
+            dataset=dataset,
+            codigo=(
+                "import pandas as pd\n"
+                "df = pd.DataFrame(rows)\n"
+                "=== ERRORES ===\n"
+                "- NO copies esto\n"
+                "print(df.head())"
+            ),
+            explicacion=["Paso 1", "Paso 2"],
+            ejercicio="Ejercicio",
+        )
+        raw = "## OBJETIVO\n...\n## DATASET\n...\n## CODIGO\n=== ERRORES ===\n- NO copies esto\n## EXPLICACION\n..."
+        return GenerationTrace(
+            parsed=parsed,
+            raw_text_original=raw,
+            sanitized_text=raw,
+            prompt_sent="prompt",
+            parse_ok=True,
+            used_fallback=False,
+            model_backend="local",
+            post_processed=False,
+        )
+
+    def generate_patch(
+        self,
+        *,
+        request: GenerateRequest,
+        section: str,
+        instruction: str,
+        previous_text: str,
+    ) -> tuple[str, str, str, bool, str]:
+        _ = request, section, instruction, previous_text
+        raise AssertionError("No debe llamarse generate_patch para fuga del repair prompt.")
+
+
+def test_validating_repair_loop_rebuilds_code_for_prompt_leak_without_model() -> None:
+    loop = ValidatingRepairLoop(
+        generator=StubLeakDeterministicGenerator(),
+        executor=CodeExecutor(),
+        validator=EducationalValidator(),
+        max_attempts=2,
+    )
+    result = loop.run(_request())
+    assert result.tests_passed is True
+    assert result.educational_passed is True
+    assert result.attempts == 1
+    assert result.model_backend == "deterministic"
+    assert result.used_fallback is True
+    assert "rows =" in result.codigo
+    assert "=== ERRORES ===" not in result.codigo
+    assert result.codigo.count("#") >= 5
+
+
+class StubEmptyDatasetGenerator:
+    def generate_with_raw(
+        self,
+        request: GenerateRequest,
+        error_prev: str | None = None,
+        attempt: int = 1,
+        use_rag: bool = False,
+    ) -> GenerationTrace:
+        _ = request, error_prev, attempt, use_rag
+        dataset = DatasetInfo(
+            nombre="demo",
+            data=[],
+            codigo_carga="df = pd.DataFrame(rows)",
+        )
+        parsed = ParsedLLMResponse(
+            objetivo="Objetivo de analisis de datos para deportes.",
+            dataset=dataset,
+            codigo=(
+                "import pandas as pd\n"
+                "=== ERRORES ===\n"
+                "- no copiar\n"
+                "df = pd.DataFrame(rows)\n"
+                "print(df.head())"
+            ),
+            explicacion=["Paso 1", "Paso 2"],
+            ejercicio="Ejercicio",
+        )
+        raw = (
+            "## OBJETIVO\nObjetivo\n\n"
+            "## DATASET\n```python\nrows=[]\n```\n\n"
+            "## CODIGO\n```python\nrows=[{'region':'Norte'}]\n```\n\n"
+            "## EXPLICACION\n- Paso 1\n- Paso 2"
+        )
+        return GenerationTrace(
+            parsed=parsed,
+            raw_text_original=raw,
+            sanitized_text=raw,
+            prompt_sent="prompt",
+            parse_ok=True,
+            used_fallback=False,
+            model_backend="local",
+            post_processed=False,
+        )
+
+
+def test_validating_repair_loop_handles_empty_dataset_with_deterministic_code() -> None:
+    loop = ValidatingRepairLoop(
+        generator=StubEmptyDatasetGenerator(),
+        executor=CodeExecutor(),
+        validator=EducationalValidator(),
+        max_attempts=2,
+    )
+    result = loop.run(_request())
+    assert result.tests_passed is True
+    assert result.educational_passed is True
+    assert "rows = []" in result.codigo
+    assert "Dataset vacio" in result.output
